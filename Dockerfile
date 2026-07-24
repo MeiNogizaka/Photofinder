@@ -11,7 +11,7 @@ ARG VARIANT=cpu
 FROM python:3.12-slim AS base-cpu
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        fonts-noto-cjk libgl1 libglib2.0-0 curl tini \
+        fonts-noto-cjk fonts-mplus libgl1 libglib2.0-0 curl tini \
     && rm -rf /var/lib/apt/lists/*
 
 # --------------------------------------------------------------- base-cuda --
@@ -22,7 +22,7 @@ FROM nvidia/cuda:13.0.0-runtime-ubuntu24.04 AS base-cuda
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3.12 python3-pip \
-        fonts-noto-cjk libgl1 libglib2.0-0 curl tini \
+        fonts-noto-cjk fonts-mplus libgl1 libglib2.0-0 curl tini \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
     && ln -sf /usr/bin/python3 /usr/bin/python

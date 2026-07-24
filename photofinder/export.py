@@ -1,12 +1,20 @@
 """書き出し (M4): 切り出し + 透かし + GPS/機材情報の除去。原本は変更しない。"""
 from __future__ import annotations
 
+import base64
+import io
 import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from . import raw_utils
+
+# 透かし画像 (data URL) のデコード後サイズガード。フロント側 (index.html
+# WM_IMAGE_MAX_BYTES) にも同じ目安の上限があるが、APIを直接叩かれた場合の
+# 保険としてサーバ側でも掛ける
+WATERMARK_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+WATERMARK_IMAGE_MAX_PIXELS = 40_000_000  # ~40MP
 
 # 透かし用フォント選択肢。id は UI の <select> と対応し、label は
 # GET /api/export/options 経由でフロントに渡す (一覧の一元管理)。
@@ -16,6 +24,9 @@ from . import raw_utils
 # 存在しないパスを黙って踏んで _load_font() がビットマップ既定フォント
 # (CJKグリフ無し、日本語が豆腐文字になる) にフォールバックしていた
 NOTO_DIR = Path("/usr/share/fonts/opentype/noto")
+# fonts-mplus (OFL-1.1、docs/third-party-notices.md参照) — Noto CJKと違い本物の
+# 太字面を9ウェイト持つファミリーだが、既存パターンに合わせてRegular/Boldのみ収録
+MPLUS_DIR = Path("/usr/share/fonts/opentype/mplus")
 FONTS: dict[str, dict] = {
     "gothic": {"label": "ゴシック体（Noto Sans JP）",
                "path": str(NOTO_DIR / "NotoSansCJK-Regular.ttc")},
@@ -25,6 +36,10 @@ FONTS: dict[str, dict] = {
                "path": str(NOTO_DIR / "NotoSerifCJK-Regular.ttc")},
     "mincho-bold": {"label": "明朝体 太字（Noto Serif JP Bold）",
                     "path": str(NOTO_DIR / "NotoSerifCJK-Bold.ttc")},
+    "mplus": {"label": "M+ 1（丸みのあるゴシック）",
+              "path": str(MPLUS_DIR / "Mplus1-Regular.otf")},
+    "mplus-bold": {"label": "M+ 1 太字",
+                   "path": str(MPLUS_DIR / "Mplus1-Bold.otf")},
 }
 DEFAULT_FONT = "gothic"
 
@@ -86,7 +101,7 @@ def export_photo(
     if max_edge and max(img.size) > max_edge:
         img.thumbnail((max_edge, max_edge), Image.LANCZOS)
 
-    if watermark and watermark.get("text"):
+    if watermark and (watermark.get("text") or watermark.get("image_data_url")):
         img = _draw_watermark(img, watermark)
 
     # EXIF: 既定は全除去 (GPS + シリアル等を確実に落とす)。
@@ -113,17 +128,65 @@ def export_photo(
     return out
 
 
+def _load_watermark_image(data_url: str) -> Image.Image:
+    """"data:image/...;base64,..." 形式の透かし画像をRGBAで読み込む。
+
+    フロントはFileReaderでアルファチャンネル付きPNG/WebP等をそのままdata URL化して
+    送ってくる (base64、JSON本文に載せる — multipartへの切り替えを避けるための選択)。
+    """
+    try:
+        _, b64data = data_url.split(",", 1)
+        raw = base64.b64decode(b64data)
+    except (ValueError, base64.binascii.Error) as e:
+        raise ValueError(f"invalid watermark image data: {e}") from e
+    if len(raw) > WATERMARK_IMAGE_MAX_BYTES:
+        raise ValueError(
+            f"watermark image too large ({len(raw)} bytes, "
+            f"max {WATERMARK_IMAGE_MAX_BYTES})")
+    img = Image.open(io.BytesIO(raw))
+    if img.width * img.height > WATERMARK_IMAGE_MAX_PIXELS:
+        raise ValueError(f"watermark image resolution too large ({img.width}x{img.height})")
+    img.load()
+    return img.convert("RGBA")
+
+
 def _draw_watermark(img: Image.Image, wm: dict) -> Image.Image:
-    text = wm["text"]
     position = wm.get("position", "bottom-right")
     opacity = max(0.05, min(1.0, float(wm.get("opacity", 0.6))))
-
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    margin = max(10, img.height // 60)
+
+    if wm.get("image_data_url"):
+        wm_img = _load_watermark_image(wm["image_data_url"])
+        # サイズは書き出し画像の幅に対する割合 (index.html の expWmImgSize と同じ指標
+        # なのでプレビューとWYSIWYGになる)。アスペクト比は保持する
+        size_pct = max(1.0, min(100.0, float(wm.get("image_size_pct", 20))))
+        target_w = max(1, round(img.width * size_pct / 100))
+        target_h = max(1, round(wm_img.height * target_w / wm_img.width))
+        wm_img = wm_img.resize((target_w, target_h), Image.LANCZOS)
+        if opacity < 1.0:  # 画像自体のアルファに、透過率スライダーをさらに掛け合わせる
+            alpha = wm_img.split()[3].point(lambda a: round(a * opacity))
+            wm_img.putalpha(alpha)
+        tw, th = wm_img.size
+        x = margin if "left" in position \
+            else img.width - tw - margin if "right" in position \
+            else (img.width - tw) / 2
+        y = margin if "top" in position \
+            else img.height - th - margin if "bottom" in position \
+            else (img.height - th) / 2
+        overlay.paste(wm_img, (round(x), round(y)), wm_img)
+        return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+
+    text = wm.get("text")
+    if not text:
+        return img
     draw = ImageDraw.Draw(overlay)
-    font = _load_font(max(14, img.height // 40), wm.get("font"))
+    # フォントサイズは書き出し画像の高さに対する割合 (index.html の expWmSize と
+    # 同じ指標。既定2.5%は旧固定値 img.height//40 と一致させてある)
+    size_pct = max(0.5, min(20.0, float(wm.get("size_pct", 2.5))))
+    font = _load_font(max(14, round(img.height * size_pct / 100)), wm.get("font"))
     l, t, r, b = draw.textbbox((0, 0), text, font=font)
     tw, th = r - l, b - t
-    margin = max(10, img.height // 60)
 
     # 横位置: left/right instruct 端寄せ、それ以外 (top/bottom 単独) は水平中央
     if "left" in position:

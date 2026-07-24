@@ -146,8 +146,20 @@ docker compose --profile cpu up -d
 docker compose --profile cuda up -d
 ```
 
-`http://127.0.0.1:8686` をブラウザで開く。UI右下の「＋ フォルダを追加」で走査フォルダを
-登録する際は、**コンテナ内パス** `/photos/...` を入力すること（詳細は [docs/docker.md](docs/docker.md)）。
+`http://127.0.0.1:8686` をブラウザで開く。
+
+**フォルダ登録のコツ**: UI右下の「＋ フォルダを追加」に入力するパスは、Windows/WSLのパスでは
+なく**常にコンテナ内パス** `/photos/...` から書くこと。`.env`の`PHOTO_LIBRARY_PATH`（ホスト側の
+実パス）が丸ごとコンテナ内の`/photos`にマウントされる仕組みなので、たとえば
+
+```
+PHOTO_LIBRARY_PATH=/mnt/c/Users/yourname/Pictures
+```
+
+と設定した場合、UIには `/photos`（Pictures直下すべてを対象にする）や `/photos/2026`
+（特定サブフォルダのみを対象にする）のように、`/photos`を起点にしたパスを入力する
+（ホスト側の実パス `C:\Users\...` や `/mnt/c/Users/...` をそのまま入力しても認識されない）。
+WSL環境での運用のコツやホストフォルダを複数登録する方法は [docs/docker.md](docs/docker.md) 参照。
 
 既定では `127.0.0.1` にのみポートが公開され、認証機構は無い。LAN/インターネットへの公開は
 `docker-compose.yml` の `ports:` を変更すれば可能だが、アクセス制御は利用者の責任になる

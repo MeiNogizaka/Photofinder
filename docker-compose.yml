@@ -9,6 +9,13 @@
 # PHOTO_LIBRARY_PATH は .env ファイルか環境変数で指定 (例: PHOTO_LIBRARY_PATH=/home/you/Pictures)。
 # UIの「フォルダを追加」にはコンテナ内パス /photos/... を登録すること (ホスト側パスではない)。
 
+# 明示的に固定する: docker composeは既定でプロジェクト名(≒volume名の接頭辞)を
+# カレントディレクトリ名から決めるため、zip展開先のフォルダ名が変わる
+# (photofinder2-0.2.0 等) と別プロジェクト扱いになり既存のnamed volume
+# (下記 photofinder2_data/photofinder2_models) を見失う。フォルダ名に依存
+# させないよう固定しておく (docs/docker.md「アップデート手順」参照)
+name: photofinder2
+
 services:
   photofinder-cpu:
     build:
@@ -18,6 +25,11 @@ services:
         VARIANT: cpu
     image: photofinder2:cpu
     profiles: ["cpu"]
+    # スキャン中(ML推論込み)にホストの全コアを使い切らないようcgroups側で制限する
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
     # ポートマッピングが公開範囲そのもの (アプリ側に認証機構は無い)。
     # 127.0.0.1 のままなら、このDockerホスト以外からは一切アクセスできない。
     # LAN/インターネットに公開したい場合のみ、左側を 0.0.0.0 (または省略) に
@@ -42,8 +54,12 @@ services:
         VARIANT: cuda
     image: photofinder2:cuda
     profiles: ["cuda"]
+    # cpus: photofinder-cpuサービスと同じ理由。GPU推論を使っても、EXIF/走査/
+    # サムネ生成やOCRはCPU側で動くため無関係ではない
     deploy:
       resources:
+        limits:
+          cpus: "2"
         reservations:
           devices:
             - driver: nvidia

@@ -51,6 +51,7 @@
 | POST | `/export/dataset` | 人手タグ付け済み写真をJSONL+画像zipで書き出す（教師/評価データセット化。`{include_negatives?, include_bird_detail?}`、既定どちらもtrue） |
 | GET | `/backup/status` | バックアップ状況（自動有効/無効・スナップショット一覧） |
 | POST | `/backup/snapshot` | DB スナップショット即時作成（`{rebuild:true}` でベクトル索引も再構築） |
+| POST | `/backup/restore` | `{path}` で指定したスナップショットに復元（下記参照） |
 | POST | `/archive/import` | Xデータアーカイブ(zip)をアップロードし取り込み開始（バックグラウンド実行、multipart。`date_from`/`date_to` (YYYY-MM-DD、任意) で投稿日を絞り込み可） |
 | GET | `/archive/import-status` | 取り込み進捗・レビュー待ち候補一覧（`phase`, `done`/`total`, `candidates[]`） |
 | POST | `/archive/import/confirm` | レビューで確認した候補を `photo_posts` へ確定登録 `{accepted:[{photo_id,tweet_id}]}` |
@@ -216,16 +217,28 @@
 {
   "crop": { "x": 0.1, "y": 0.05, "w": 0.6, "h": 0.6 },      // 省略可（0-1 正規化）
   "watermark": { "text": "© mikan", "position": "bottom-right",
-                 "font": "gothic", "opacity": 0.6 },         // 省略可
+                 "font": "gothic", "opacity": 0.6, "size_pct": 2.5 },   // 省略可（テキスト透かし）
   "strip_metadata": true,   // true = EXIF 全除去 (GPS・機材シリアル含む)。旧名 strip_gps も受理
   "format": "png", "quality": 95, "max_edge": null,          // 既定: PNG・原寸。JPEG時のみ quality 使用
   "out_dir": "sns"          // 省略可。data/exports/ 配下のサブフォルダ名としてのみ解釈 (外は 403)
 }
 ```
 
+`watermark`はテキスト透かし（`text`必須）と画像透かし（`image_data_url`必須）の**どちらか一方**を指定する:
+
+```json
+{ "watermark": { "image_data_url": "data:image/png;base64,...", "image_size_pct": 20,
+                  "position": "bottom-right", "opacity": 0.8 } }
+```
+
 `watermark.position` は 3x3 グリッドの8方向（中央除く）: `top-left`, `top`, `top-right`,
-`left`, `right`, `bottom-left`, `bottom`, `bottom-right`。
-`watermark.font` は `GET /export/options` が返す id（既定 `gothic`＝Noto Sans JP）。
+`left`, `right`, `bottom-left`, `bottom`, `bottom-right`。両方式で共通。
+`watermark.font` は `GET /export/options` が返す id（既定 `gothic`＝Noto Sans JP）。テキスト方式のみ。
+`watermark.size_pct`（テキスト、既定2.5・許容範囲0.5〜20）は書き出し画像の**高さ**に対するフォント
+サイズの割合。`watermark.image_size_pct`（画像、既定20・許容範囲1〜100）は書き出し画像の**幅**に
+対する透かし画像の幅の割合（アスペクト比は保持）。`image_data_url`はアルファチャンネル付き
+PNG/WebP等を`FileReader`でdata URL化したもの（デコード後8MB・4000万px超は500エラーで拒否）。
+画像自体のアルファに`opacity`をさらに掛け合わせて合成する。
 
 → `{ "out_path": "/app/data/exports/DSC01234_edit.png" }`。**原本は変更しない。**
 
@@ -269,6 +282,29 @@ images/{xxhash}.webp # 1600pxプレビュー (オリジナルではない。GPS/
 ため既定で含める。`species_detail`は`detections`+`bird_ids`を`photo_tags.verified`
 （種名タグ名で突き合わせ、`bird_ids.confirmed`は既存UIから更新されない別カラムのため
 使わない）でゲートしたもの。
+
+## POST /backup/restore
+
+```json
+{ "path": "/app/data/backup/photofinder-20260724-143202-255.db" }
+```
+
+`path`は`GET /backup/status`の`snapshots[].path`のいずれか（`data/backup/`配下のみ許可、
+外は403）。誤って選んでも1つ前に戻せるよう、**復元前に現在の状態の安全スナップショットを
+自動作成**してから復元する。復元は`photofinder.db`をスナップショットファイルで置き換える
+処理で、生きたWALモード接続を持ったまま安全に差し替えるため**復元後にプロセスを終了**し、
+Dockerの`restart: unless-stopped`ポリシーによる再起動を待つ（`/api/shutdown`と同じ
+「差し替え→即終了→再起動時に開き直す」パターン）。
+
+```json
+{ "ok": true, "safety_snapshot": "/app/data/backup/photofinder-20260724-143202-309.db",
+  "restored_from": "/app/data/backup/photofinder-20260724-143202-255.db", "restarting": true }
+```
+
+エラー: スキャン実行中は409、`path`未指定は422、`backup/`配下以外のパスは403、
+存在しないファイルは404。復元直後はFAISS索引が古いDBの内容とズレうるが、検索結果の
+`_hydrate()`は存在しないphoto_idを黙ってフィルタするだけでエラーにはならないため
+自動再構築はしない（気になる場合は`POST /index/rebuild-vectors`を別途呼ぶ）。
 
 ## GET /index/status
 

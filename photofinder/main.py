@@ -968,6 +968,55 @@ def backup_snapshot(body: dict = Body(default={})):
     return result
 
 
+@app.post("/api/backup/restore")
+def backup_restore(body: dict = Body(...)):
+    """指定したスナップショットで photofinder.db を復元する。
+
+    誤って選んでも1つ前の状態に戻せるよう、復元前に現在の状態の安全
+    スナップショットを自動で作成する。復元後はプロセスを終了し、Dockerの
+    restart policy (docker-compose.yml の restart: unless-stopped) による
+    再起動を待つ — 生きたWALモード接続を持ったままDBファイルを差し替えるのは
+    危険なため、/api/shutdown と同じ「差し替え→即終了→再起動時に新しい
+    状態で開き直す」パターンに乗る。復元直後はFAISS索引が古いDBの内容と
+    ズレうるが、_hydrate() は存在しないphoto_idを黙ってフィルタするだけで
+    エラーにはならない (main.py 参照) ため自動再構築はしない — 気になる
+    場合は再起動後に設定画面から「ベクトル索引を再構築」を実行すればよい。
+    """
+    from .backup import restore, snapshot, validate_snapshot_path
+    if scanner.STATUS.running:
+        raise HTTPException(409, "scan running - try again after it finishes")
+    path = body.get("path")
+    if not path:
+        raise HTTPException(422, "path is required")
+    # 復元先を先に検証してから安全スナップショットを作る。無効なリクエストの
+    # たびに無駄なスナップショットが積み上がるのを防ぐため
+    try:
+        validate_snapshot_path(DATA_DIR, Path(path))
+    except ValueError as ex:
+        raise HTTPException(403, str(ex))
+    except FileNotFoundError as ex:
+        raise HTTPException(404, str(ex))
+    try:
+        safety = snapshot(DATA_DIR)
+    except Exception as ex:
+        raise HTTPException(500, f"safety snapshot before restore failed: {ex}")
+    try:
+        result = restore(DATA_DIR, Path(path), db)
+    except ValueError as ex:
+        raise HTTPException(403, str(ex))
+    except FileNotFoundError as ex:
+        raise HTTPException(404, str(ex))
+    except Exception as ex:
+        raise HTTPException(500, f"restore failed: {ex}")
+
+    def _exit_soon():
+        time.sleep(0.3)
+        os._exit(0)
+    threading.Thread(target=_exit_soon, daemon=True).start()
+    return {"ok": True, "safety_snapshot": safety["out_path"],
+            **result, "restarting": True}
+
+
 @app.post("/api/export/dataset")
 def export_dataset(body: dict = Body(default={})):
     """人手タグ付け済み写真をJSONL+画像zipとしてエクスポート (教師/評価データセット化)。

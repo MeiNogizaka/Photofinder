@@ -104,6 +104,20 @@ LGPL-2.1はリンクする側（PhotoFinder）にAGPL/GPL化を要求しない�
 採用しているPhotoFinderにとって、LGPL-2.1コンポーネントの追加はライセンス選定に
 影響しない（pillow-heif/libheifと同様の扱い）。
 
+## Dockerイメージに同梱するフォント
+
+透かし書き出し機能 (`photofinder/export.py` の `FONTS`) 用にaptパッケージとして
+Dockerイメージへ同梱している。Pythonパッケージではないため上記の表には含めず、
+ここに独立して記録する。
+
+| パッケージ | 書体 | ライセンス | 備考 |
+|---|---|---|---|
+| `fonts-noto-cjk` | Noto Sans/Serif JP (CJK統合) | **OFL-1.1** | 元々HEIC等とは無関係にCJK全般の表示用に導入済み。透かしの既定フォント |
+| `fonts-mplus` | M+ 1 (Regular/Bold) | **OFL-1.1** | 実機で `apt-cache search`/インストール後の `/usr/share/doc/fonts-mplus/copyright` を確認し特定。既存のNoto系と異なり本物の太字面を持つ。候補として `fonts-ipafont`/`fonts-ipaexfont`/`fonts-takao`（いずれもIPA Font License 1.0、改変時の名称変更義務あり）/`fonts-vlgothic`（M+Font/Sazanami/BSD-3-Clauseの混在）も検討したが、OFL-1.1が最も制約が緩く既存方針と相性が良いため採用 |
+
+OFL-1.1 (SIL Open Font License) は同梱・再配布・改変を明示的に許可する設計のフォント
+専用ライセンスで、AGPL-3.0のPhotoFinderに同梱してもライセンス選定に影響しない。
+
 ## 学習済みモデル
 
 | モデル | 取得元 | ライセンス | 備考 |

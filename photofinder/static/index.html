@@ -360,9 +360,7 @@
     <input id="setBackupAuto" type="checkbox">
     週次スナップショットを自動作成（3世代保持）
   </label>
-  <div id="setBackupStatus" style="font-size:12px; color:var(--ink2); margin:6px 0 8px">
-    確認中…
-  </div>
+  <div id="setBackupList" class="roots-list" style="margin:8px 0">確認中…</div>
   <label style="display:flex; gap:8px; align-items:center; cursor:pointer; font-size:12.5px; margin-bottom:8px">
     <input id="setBackupRebuild" type="checkbox">
     作成時にベクトル索引も再構築する
@@ -468,29 +466,55 @@
   </div>
 </dialog>
 
-<dialog id="expDlg" style="min-width:640px">
+<dialog id="expDlg" style="min-width:640px; width:min(94vw, 1200px); max-height:90vh; overflow-y:auto">
   <b>書き出し</b> <span id="expName" style="color:var(--ink2);font-size:12px"></span>
   <div style="display:flex; gap:16px; margin-top:12px">
-    <div>
+    <div id="expCanvasWrap" style="flex:1; min-width:0">
       <canvas id="expCanvas" width="420" height="300" style="touch-action:none; cursor:crosshair;
-              background:var(--chip); border-radius:6px; max-width:420px; display:block"></canvas>
+              background:var(--chip); border-radius:6px; display:block"></canvas>
       <p style="font-size:10.5px; color:var(--ink2); margin:6px 0 0">
         画像上をドラッグして切り出し範囲を指定（枠内をドラッグで移動、四隅/辺をドラッグで拡縮）
       </p>
-      <div style="display:flex; gap:6px; margin-top:8px" id="expAspects">
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center" id="expAspects">
         <button class="ghost" data-a="" style="font-size:11px;padding:3px 10px">自由</button>
         <button class="ghost" data-a="1" style="font-size:11px;padding:3px 10px">1:1</button>
         <button class="ghost" data-a="0.8" style="font-size:11px;padding:3px 10px">4:5</button>
         <button class="ghost" data-a="1.7778" style="font-size:11px;padding:3px 10px">16:9</button>
         <button class="ghost" data-a="1.5" style="font-size:11px;padding:3px 10px">3:2</button>
+        <span style="display:flex; align-items:center; gap:3px; font-size:11px; color:var(--ink2)">
+          <input id="expAspW" type="number" min="1" placeholder="幅" style="width:40px; margin:0; padding:3px 4px; font-size:11px">:<input id="expAspH" type="number" min="1" placeholder="高さ" style="width:40px; margin:0; padding:3px 4px; font-size:11px">
+          <button id="expAspCustomBtn" class="ghost" style="font-size:11px;padding:3px 8px">適用</button>
+        </span>
       </div>
     </div>
     <div style="width:220px; font-size:12px">
       <p class="lbl" style="margin-top:0">透かし</p>
-      <input id="expWm" placeholder="© your name" style="width:100%; margin:0 0 6px">
-      <div style="display:flex; gap:10px; margin-bottom:6px">
+      <div style="display:flex; gap:6px; margin-bottom:6px" id="expWmMode">
+        <button class="ghost" data-m="text" style="font-size:11px;padding:3px 10px;flex:1">テキスト</button>
+        <button class="ghost" data-m="image" style="font-size:11px;padding:3px 10px;flex:1">画像</button>
+      </div>
+      <div id="expWmTextControls">
+        <input id="expWm" placeholder="© your name" style="width:100%; margin:0 0 6px">
+        <div style="display:flex; gap:10px; margin-bottom:6px">
+          <select id="expWmFont" style="flex:1; background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:4px; font-size:11px"></select>
+        </div>
+        <div style="display:flex; gap:6px; align-items:center; font-size:11px; color:var(--ink2); margin-bottom:6px">
+          <span style="flex:none; width:44px">文字量</span>
+          <input id="expWmSize" type="range" min="1" max="8" step="0.5" value="2.5" style="flex:1">
+          <span id="expWmSizeVal" style="flex:none; width:32px; text-align:right">2.5%</span>
+        </div>
+      </div>
+      <div id="expWmImageControls" hidden>
+        <input id="expWmImgFile" type="file" accept="image/png,image/webp,image/*" style="width:100%; margin:0 0 6px; font-size:11px">
+        <p id="expWmImgName" style="font-size:10.5px; color:var(--ink2); margin:0 0 6px"></p>
+        <div style="display:flex; gap:6px; align-items:center; font-size:11px; color:var(--ink2); margin-bottom:6px">
+          <span style="flex:none; width:44px">サイズ</span>
+          <input id="expWmImgSize" type="range" min="5" max="60" step="1" value="20" style="flex:1">
+          <span id="expWmImgSizeVal" style="flex:none; width:32px; text-align:right">20%</span>
+        </div>
+      </div>
+      <div style="margin-bottom:6px">
         <div id="expWmPosGrid" class="wmpos-grid" title="表示位置"></div>
-        <select id="expWmFont" style="flex:1; background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:4px; font-size:11px"></select>
       </div>
       <div style="display:flex; gap:6px; align-items:center; font-size:11px; color:var(--ink2)">
         <span style="flex:none">透過率</span>
@@ -1015,7 +1039,8 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // --- 書き出し設定の記憶 (crop枠は写真ごとに違うため対象外。それ以外は次回に引き継ぐ) ---
 const EXPORT_PREFS_KEY = "pf_export_prefs_v1";
 const EXPORT_DEFAULTS = {
-  wm: "", wmPos: "bottom-right", wmFont: "gothic", wmOp: 0.6,
+  wm: "", wmPos: "bottom-right", wmFont: "gothic", wmOp: 0.6, wmSize: 2.5,
+  wmMode: "text", wmImgSize: 20,
   gps: true, format: "png", edge: "", quality: 95,
 };
 function loadExportPrefs() {
@@ -1025,7 +1050,11 @@ function loadExportPrefs() {
 function saveExportPrefs() {
   localStorage.setItem(EXPORT_PREFS_KEY, JSON.stringify({
     wm: $("expWm").value, wmPos: exp.wmPos, wmFont: $("expWmFont").value,
-    wmOp: +$("expWmOp").value, gps: $("expGps").checked,
+    wmOp: +$("expWmOp").value, wmSize: +$("expWmSize").value,
+    // wmMode/wmImgSizeは記憶するが、透かし画像自体 (base64) はlocalStorageの
+    // 容量を圧迫しうるため対象外 — 再度開いたときはファイルを選び直してもらう
+    wmMode: exp.wmMode, wmImgSize: +$("expWmImgSize").value,
+    gps: $("expGps").checked,
     format: $("expFormat").value, edge: $("expEdge").value, quality: +$("expQ").value,
   }));
 }
@@ -1067,14 +1096,18 @@ async function ensureWmFontOptions() {
   sel.innerHTML = wmFontsLoaded.fonts.map(f => `<option value="${esc(f.id)}">${esc(f.label)}</option>`).join("");
   return wmFontsLoaded;
 }
-// canvas プレビュー用の CSS フォント対応表 (バックエンドの export.FONTS と同じ id を使う)
+// canvas プレビュー用の CSS フォント対応表 (バックエンドの export.FONTS と同じ id を使う)。
+// 実際の書き出しはDockerコンテナ内のNoto Sans/Serif JPで行われる (export.py参照) が、
+// ブラウザ側にそのフォントが無ければ一般的なsans-serif/serifにフォールバックする
+// (プレビューはあくまで近似。旧Windows専用フォント名 Meiryo/Yu Gothic 等は
+// 実際のレンダリングと対応しなくなったため削除した)
 const WM_FONT_CSS = {
-  "gothic":      { family: '"Meiryo", sans-serif', weight: "" },
-  "gothic-bold": { family: '"Meiryo", sans-serif', weight: "bold" },
-  "yugothic":    { family: '"Yu Gothic", sans-serif', weight: "" },
-  "mincho":      { family: '"Yu Mincho", serif', weight: "" },
-  "mono":        { family: '"Cascadia Mono", monospace', weight: "" },
-  "serif-en":    { family: 'Georgia, serif', weight: "" },
+  "gothic":      { family: '"Noto Sans JP", sans-serif', weight: "" },
+  "gothic-bold": { family: '"Noto Sans JP", sans-serif', weight: "bold" },
+  "mincho":      { family: '"Noto Serif JP", serif', weight: "" },
+  "mincho-bold": { family: '"Noto Serif JP", serif', weight: "bold" },
+  "mplus":       { family: '"M PLUS 1", sans-serif', weight: "" },
+  "mplus-bold":  { family: '"M PLUS 1", sans-serif', weight: "bold" },
 };
 
 async function openExport(photo) {
@@ -1082,7 +1115,14 @@ async function openExport(photo) {
   exp.aspect = null;
   exp.box = { x: 0, y: 0, w: 1, h: 1 };
   exp.drag = null;
+  // 透かし画像はダイアログを開くたびに選び直す (localStorageに永続化しない、
+  // saveExportPrefsのコメント参照)
+  exp.wmImageDataUrl = null;
+  exp.wmImageEl = null;
+  $("expWmImgFile").value = "";
+  $("expWmImgName").textContent = "";
   [...$("expAspects").children].forEach(b => b.classList.toggle("ghost", b.dataset.a !== ""));
+  $("expAspW").value = ""; $("expAspH").value = "";
   $("expName").textContent = basename(photo.path);
   $("expResult").textContent = "";
 
@@ -1093,6 +1133,9 @@ async function openExport(photo) {
   renderWmPosGrid();
   $("expWmFont").value = prefs.wmFont;
   $("expWmOp").value = prefs.wmOp; $("expWmOpVal").textContent = Math.round(prefs.wmOp * 100) + "%";
+  $("expWmSize").value = prefs.wmSize; $("expWmSizeVal").textContent = prefs.wmSize + "%";
+  $("expWmImgSize").value = prefs.wmImgSize; $("expWmImgSizeVal").textContent = prefs.wmImgSize + "%";
+  setWmMode(prefs.wmMode);
   $("expGps").checked = prefs.gps;
   $("expFormat").value = prefs.format;
   $("expEdge").value = prefs.edge;
@@ -1102,7 +1145,35 @@ async function openExport(photo) {
   exp.img.onload = drawExport;
   exp.img.src = `/api/photos/${photo.id}/preview?h=${photo.xxhash}`;
   $("expDlg").showModal();
+  // showModal() 後でないと expCanvasWrap の clientWidth が測れない (非表示中は0)
+  resizeExpCanvas();
+  drawExport();
 }
+
+function setWmMode(mode) {
+  exp.wmMode = mode === "image" ? "image" : "text";
+  $("expWmTextControls").hidden = exp.wmMode !== "text";
+  $("expWmImageControls").hidden = exp.wmMode !== "image";
+  [...$("expWmMode").children].forEach(b => b.classList.toggle("ghost", b.dataset.m !== exp.wmMode));
+}
+
+// キャンバスの実サイズ (描画バッファ=画面px) をダイアログの空き幅に合わせて拡大する。
+// 420:300 という元のレターボックス枠の縦横比は保ったまま、横幅いっぱいに広げ、
+// 縦に長くなりすぎる場合は画面高さの60%を上限にする。バッファ=CSS表示pxを一致させて
+// いるため (別途widthのCSS指定はしない)、expCanvasXY() のポインタ座標変換もそのまま動く
+function resizeExpCanvas() {
+  const wrap = $("expCanvasWrap"), c = $("expCanvas");
+  const boxRatio = 420 / 300;
+  let w = Math.max(420, wrap.clientWidth);
+  let h = w / boxRatio;
+  const maxH = window.innerHeight * 0.6;
+  if (h > maxH) { h = maxH; w = h * boxRatio; }
+  c.width = Math.round(w);
+  c.height = Math.round(h);
+}
+window.addEventListener("resize", () => {
+  if ($("expDlg").open) { resizeExpCanvas(); drawExport(); }
+});
 
 // 画像をキャンバス内にレターボックス表示する矩形（ピクセル座標）
 function expImageRect() {
@@ -1157,8 +1228,19 @@ function drawExport() {
 
   // 切り出しサイズ (px) — 枠の外側 (上→ダメなら下) に表示し、写真/透かしと重ねない。
   // 外側に置く余地が無いときだけ枠内側に回すが、その際は透かし位置と反対側の角を選ぶ。
-  const iw = exp.img.naturalWidth, ih = exp.img.naturalHeight;
-  const pxW = Math.round(exp.box.w * iw), pxH = Math.round(exp.box.h * ih);
+  // プレビュー画像 (exp.img、preview APIで1600px上限) ではなく実際の原本解像度
+  // (exp.photo.width/height) を基準にする — でないと表示px数がプレビューの上限で
+  // 頭打ちになり、実際の書き出し結果 (原本を直接処理、原寸なら無制限) と食い違う。
+  // 「長辺」設定 (expEdge) によるリサイズも export.py の thumbnail() と同じ計算で
+  // 反映し、実際に書き出される最終pxを表示する
+  const origW = exp.photo.width || exp.img.naturalWidth;
+  const origH = exp.photo.height || exp.img.naturalHeight;
+  let pxW = Math.round(exp.box.w * origW), pxH = Math.round(exp.box.h * origH);
+  const maxEdge = $("expEdge").value ? +$("expEdge").value : null;
+  if (maxEdge && Math.max(pxW, pxH) > maxEdge) {
+    const s = maxEdge / Math.max(pxW, pxH);
+    pxW = Math.round(pxW * s); pxH = Math.round(pxH * s);
+  }
   const dimLabel = `${pxW} × ${pxH}px`;
   ctx.font = "11px ui-monospace, Consolas, monospace";
   const dtw = ctx.measureText(dimLabel).width;
@@ -1179,14 +1261,38 @@ function drawExport() {
   ctx.fillText(dimLabel, lx + padX, ly + labelH / 2 + 1);
   ctx.textBaseline = "alphabetic";
 
+  if (box.w <= 10 || box.h <= 10) return;
+  const pos = exp.wmPos || "bottom-right";
+  const m = 8;
+
+  if (exp.wmMode === "image" && exp.wmImageEl?.complete) {
+    // サイズはbox.w (切り出し枠の表示幅) に対する割合 — export.py側もimg.width
+    // (書き出される画像の幅) に対する割合で同じ計算をするのでWYSIWYGになる
+    const sizePct = +$("expWmImgSize").value;
+    const iw2 = exp.wmImageEl.naturalWidth, ih2 = exp.wmImageEl.naturalHeight;
+    const dw = box.w * (sizePct / 100), dh = dw * (ih2 / iw2);
+    const wx = pos.includes("left") ? box.x + m
+             : pos.includes("right") ? box.x + box.w - dw - m
+             : box.x + (box.w - dw) / 2;
+    const wy = pos.includes("top") ? box.y + m
+             : pos.includes("bottom") ? box.y + box.h - dh - m
+             : box.y + (box.h - dh) / 2;
+    ctx.globalAlpha = +$("expWmOp").value;
+    ctx.drawImage(exp.wmImageEl, wx, wy, dw, dh);
+    ctx.globalAlpha = 1;
+    return;
+  }
+
   const text = $("expWm").value.trim();
-  if (text && box.w > 10 && box.h > 10) {
-    const fs = Math.max(11, box.h / 14);
+  if (exp.wmMode === "text" && text) {
+    // フォントサイズはbox.h (切り出し枠の表示高さ) に対する割合 — export.py側も
+    // img.height (書き出される画像の高さ) に対する同じ割合で計算するのでWYSIWYGになる
+    const sizePct = +$("expWmSize").value;
+    const fs = Math.max(11, box.h * (sizePct / 100));
     const fdef = WM_FONT_CSS[$("expWmFont").value] || WM_FONT_CSS.gothic;
     ctx.font = `${fdef.weight} ${fs}px ${fdef.family}`.trim();
     ctx.globalAlpha = +$("expWmOp").value;
-    const m = 8, tw = ctx.measureText(text).width;
-    const pos = exp.wmPos || "bottom-right";
+    const tw = ctx.measureText(text).width;
     const tx = pos.includes("left") ? box.x + m
              : pos.includes("right") ? box.x + box.w - tw - m
              : box.x + (box.w - tw) / 2;
@@ -1305,6 +1411,15 @@ $("expAspects").addEventListener("click", e => {
   expApplyAspect();
 });
 
+$("expAspCustomBtn").addEventListener("click", () => {
+  const w = +$("expAspW").value, h = +$("expAspH").value;
+  if (!(w > 0) || !(h > 0)) return;  // 未入力・0以下は無視
+  exp.aspect = w / h;
+  // プリセットボタンはどれも一致しないのですべて非選択にする
+  [...$("expAspects").querySelectorAll("button[data-a]")].forEach(x => x.classList.add("ghost"));
+  expApplyAspect();
+});
+
 function updateExpFormatUI() {
   const isJpeg = $("expFormat").value === "jpeg";
   $("expQLabel").style.display = isJpeg ? "" : "none";
@@ -1314,21 +1429,71 @@ $("expFormat").addEventListener("change", () => { updateExpFormatUI(); saveExpor
 
 $("expWm").addEventListener("input", () => { drawExport(); saveExportPrefs(); });
 $("expWmFont").addEventListener("change", () => { drawExport(); saveExportPrefs(); });
-for (const id of ["expGps", "expEdge", "expQ"]) $(id).addEventListener("change", saveExportPrefs);
+for (const id of ["expGps", "expQ"]) $(id).addEventListener("change", saveExportPrefs);
+$("expEdge").addEventListener("change", () => { drawExport(); saveExportPrefs(); });
 $("expWmOp").addEventListener("input", () => {
   $("expWmOpVal").textContent = Math.round(+$("expWmOp").value * 100) + "%";
   drawExport(); saveExportPrefs();
 });
+$("expWmSize").addEventListener("input", () => {
+  $("expWmSizeVal").textContent = $("expWmSize").value + "%";
+  drawExport(); saveExportPrefs();
+});
+$("expWmImgSize").addEventListener("input", () => {
+  $("expWmImgSizeVal").textContent = $("expWmImgSize").value + "%";
+  drawExport(); saveExportPrefs();
+});
+
+$("expWmMode").addEventListener("click", e => {
+  const b = e.target.closest("[data-m]");
+  if (!b) return;
+  setWmMode(b.dataset.m);
+  drawExport(); saveExportPrefs();
+});
+
+const WM_IMAGE_MAX_BYTES = 8 * 1024 * 1024;  // 8MB — base64化してJSON本文に載せるための目安上限
+$("expWmImgFile").addEventListener("change", () => {
+  const file = $("expWmImgFile").files[0];
+  if (!file) return;
+  if (file.size > WM_IMAGE_MAX_BYTES) {
+    $("expWmImgName").textContent = `エラー: ${(file.size/1048576).toFixed(1)}MBは大きすぎます (上限8MB)`;
+    $("expWmImgFile").value = "";
+    exp.wmImageDataUrl = null; exp.wmImageEl = null;
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    exp.wmImageDataUrl = reader.result;
+    const img = new Image();
+    img.onload = () => { exp.wmImageEl = img; drawExport(); };
+    img.src = exp.wmImageDataUrl;
+    $("expWmImgName").textContent = `${file.name} (${(file.size/1024).toFixed(0)}KB)`;
+  };
+  reader.readAsDataURL(file);
+});
+
+function buildWatermarkPayload() {
+  if (exp.wmMode === "image") {
+    if (!exp.wmImageDataUrl) return null;
+    return {
+      image_data_url: exp.wmImageDataUrl, image_size_pct: +$("expWmImgSize").value,
+      position: exp.wmPos, opacity: +$("expWmOp").value,
+    };
+  }
+  const text = $("expWm").value.trim();
+  if (!text) return null;
+  return {
+    text, position: exp.wmPos, font: $("expWmFont").value,
+    opacity: +$("expWmOp").value, size_pct: +$("expWmSize").value,
+  };
+}
 
 $("expGo").onclick = async () => {
   const box = exp.box;
   const isFull = box.w > 0.999 && box.h > 0.999;
   const body = {
     crop: isFull ? null : box,
-    watermark: $("expWm").value.trim()
-      ? { text: $("expWm").value.trim(), position: exp.wmPos,
-          font: $("expWmFont").value, opacity: +$("expWmOp").value }
-      : null,
+    watermark: buildWatermarkPayload(),
     strip_metadata: $("expGps").checked,
     format: $("expFormat").value,
     quality: +$("expQ").value,
@@ -1422,10 +1587,54 @@ async function refreshRoots() {
 async function refreshBackupStatus() {
   const b = await api("/backup/status");
   $("setBackupAuto").checked = b.enabled;
-  $("setBackupStatus").textContent = b.snapshots.length
-    ? `最終: ${b.snapshots[0].taken_at.replace("T", " ").slice(0, 16)} · ` +
-      `${(b.snapshots[0].size / 1048576).toFixed(1)} MB · ${b.snapshots.length}世代`
-    : "スナップショットはまだありません";
+  const box = $("setBackupList");
+  box.innerHTML = "";
+  if (!b.snapshots.length) {
+    box.innerHTML = '<span style="color:var(--ink2); font-size:12px">スナップショットはまだありません</span>';
+    return;
+  }
+  for (const snap of b.snapshots) {
+    const when = snap.taken_at.replace("T", " ").slice(0, 16);
+    const row = document.createElement("div");
+    row.className = "root-row";
+    row.innerHTML = `
+      <span class="path" style="font-family:inherit">${esc(when)}</span>
+      <small>${(snap.size / 1048576).toFixed(1)} MB</small>
+      <button class="ghost" style="font-size:11px; padding:2px 10px; flex:none" data-restore>復元</button>`;
+    row.querySelector("[data-restore]").onclick = async () => {
+      if (!confirm(
+        `${when} 時点のバックアップに復元しますか?\n` +
+        `これ以降に追加・変更したタグ/写真は失われます。\n` +
+        `(復元前に現在の状態を自動でバックアップします)`)) return;
+      try {
+        await api("/backup/restore", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({path: snap.path}),
+        });
+      } catch (err) {
+        alert("復元に失敗しました: " + err.message);
+        return;
+      }
+      box.innerHTML = '<span style="color:var(--ink2); font-size:12px">復元中です。アプリを再起動しています…</span>';
+      waitForRestartAndReload();
+    };
+    box.appendChild(row);
+  }
+}
+
+// 復元後のプロセス再起動 (docker-compose の restart policy 頼み) を待って
+// 自動リロードする。応答が返らない間は「壊れた?」と不安にさせないため
+// 静かにリトライを続ける
+function waitForRestartAndReload() {
+  const tryPing = async () => {
+    try {
+      await api("/index/status");
+      location.reload();
+    } catch {
+      setTimeout(tryPing, 1000);
+    }
+  };
+  setTimeout(tryPing, 1000);
 }
 
 async function refreshVecStatus() {
@@ -1831,6 +2040,10 @@ setInterval(async () => {
     $("statusDot").className = "dot" + (s.running ? " busy" : "");
     $("cancelBtn").hidden = !s.running || s.cancel_requested;
     $("scanBtn").hidden = s.running;
+    // スキャン中は復元を無効化 (バックエンドも409で拒否するが、押せる状態に
+    // 見せて後から拒否されるより先にグレーアウトする方が親切)
+    document.querySelectorAll("#setBackupList [data-restore]")
+      .forEach(b => { b.disabled = s.running; b.title = s.running ? "スキャン中は復元できません" : ""; });
 
     if (s.running && s.phase === "extract" && s.total > 0) {
       $("scanProgress").hidden = false;

@@ -65,6 +65,137 @@ named volumeには何も残らない。
 `photofinder2_data`ボリューム内`data/backup/`に作られる。FAISS索引・サムネは
 DBから再構築可能なので、最悪DBだけ守れば復旧できる (README参照)。
 
+### WSL2でのパフォーマンスの注意
+
+WSL2上でコンテナを動かし、`PHOTO_LIBRARY_PATH`にWindows側フォルダ
+(`/mnt/c/Users/...`等) を指定すると、WSL2からNTFSへのアクセスは小さいファイルを
+大量に読み書きする処理 (差分スキャンのxxHash計算・サムネ/プレビュー生成など) で
+体感できるほど遅くなることが知られている (WSL2のよく知られた制約で、
+photofinder2固有の問題ではない)。写真枚数が多いライブラリでは:
+
+- 可能なら写真そのものをWSL2側のネイティブファイルシステム (例: `~/Pictures`) に
+  置き、`PHOTO_LIBRARY_PATH`もそちらを指す
+- Windows側に置かざるを得ない場合は、初回スキャンが`/mnt/c/...`経由のI/O待ちで
+  遅くなる前提で計画する (`GET /api/index/status`の`rate_per_min`で実測できる)
+
+### 複数のホストフォルダを登録したい場合
+
+`docker-compose.yml`のbind mountは既定で1本 (`/photos`) だけなので、UIから
+登録できるのはその配下のみ。物理的に分かれた複数フォルダ (例: Windows側の
+`Pictures`とは別にDドライブの`Photos`も対象にしたい) を扱いたい場合は、
+`docker-compose.yml`の該当サービスにマウントをもう1行追加する:
+
+```yaml
+    volumes:
+      - photofinder2_data:/app/data
+      - photofinder2_models:/app/models
+      - ${PHOTO_LIBRARY_PATH}:/photos:ro
+      - ${PHOTO_LIBRARY_PATH2}:/photos2:ro   # 追加
+```
+
+`.env`に`PHOTO_LIBRARY_PATH2`を追加した上で`docker compose up`し直せば、UIから
+`/photos`と`/photos2`の両方をルートとして登録できるようになる。
+
+## アップデート手順
+
+**`data`/`models`はDocker named volumeであり、リポジトリのファイルではない**
+(上記「ボリューム」参照)。そのためソースコードの更新それ自体は既存データに
+一切触れない。DB・サムネ・FAISS索引・POIデータ・バックアップは、ソース更新の
+方法(git pull / zip展開のどちらでも)に関係なく保持される。
+
+### git pullで更新する場合
+
+```bash
+git pull
+docker compose --profile cpu build      # cudaなら --profile cuda
+docker compose --profile cpu up -d      # コンテナを作り直す。volumeはそのまま引き継ぐ
+```
+
+### zipをダウンロードして更新する場合(gitを使わない場合)
+
+1. 新しいソースのzipを取得し、別の一時フォルダに展開する
+2. 今使っているフォルダから `.env` をコピーする(zipには含まれない — `.env`は
+   `.gitignore`対象でリポジトリ自体に含まれないため、上書きの心配は無い)
+3. 今のコンテナを停止する: `docker compose --profile cpu down`
+   (**`-v` を付けないこと** — `-v`はvolumeごと削除してしまう)
+4. 展開した新しいフォルダに移動し、`docker compose --profile cpu build && docker
+   compose --profile cpu up -d` を実行する
+
+**注意点(実機で確認済みの落とし穴)**: docker composeは既定でプロジェクト名
+(≒volume名の接頭辞)を**カレントディレクトリ名**から決める。zipの展開先フォルダ名
+が元のフォルダ名と異なる(例: `photofinder2-0.2.0/`のように展開される)と、
+別プロジェクト扱いになり既存の`photofinder2_data`/`photofinder2_models`
+volumeを見失う — データが消えるわけではない(volume自体はDocker上に残り続ける)
+が、新しいコンテナは空のvolumeで起動してしまい、一見データが消えたように見える。
+これを避けるため`docker-compose.yml`の先頭に`name: photofinder2`を明示している
+(フォルダ名に依存しない)。**この行を削除・変更しないこと。**
+万一(古いフォルダ名依存のバージョンで運用していた等の理由で)新しいvolumeが
+作られてしまった場合は、`docker volume ls`で古い方(例:
+`<旧フォルダ名>_photofinder2_data`のような名前)が残っているか確認し、
+新しく作られた空のvolumeを`docker compose down -v`で消してから、
+`docker-compose.yml`の`volumes:`定義に`external: true`と`name:`を指定して
+古いvolumeを明示的に指すようにすれば復旧できる:
+```yaml
+volumes:
+  photofinder2_data:
+    external: true
+    name: <旧フォルダ名>_photofinder2_data
+  photofinder2_models:
+    external: true
+    name: <旧フォルダ名>_photofinder2_models
+```
+
+### モデル・スキーマの扱い
+
+モデル(SigLIP2/YOLOv8x/OCR)を差し替える更新でない限り、`model-fetch`の
+再実行は不要。DBスキーマの変更は`photofinder/db.py`の`_migrate()`が
+`schema_meta.schema_version`を見て起動時に自動で追記型のマイグレーションを
+行うため、手動でのDB操作は基本的に不要(既存行を壊さない設計)。念のため、
+更新前に設定画面の「バックアップ」から手動スナップショットを取っておくと安全。
+
+## 環境移行(別マシンへの引っ越し)
+
+Docker named volumeは「一時コンテナ+tar」方式でマシン間を移行できる(実機で
+動作確認済み)。この方法ならDB・タグ・サムネ・FAISS索引・POIデータ・バックアップ
+履歴が全部そのまま移り、**新環境での再スキャンは不要**になる。
+
+**旧環境でバックアップを作成**(volume名は`docker compose --profile cpu config
+--format json`で確認できる。`name: photofinder2`+volumeキー`photofinder2_data`
+から実際には`photofinder2_photofinder2_data`になる):
+
+```bash
+docker compose --profile cpu down   # -v は付けない
+docker run --rm \
+  -v photofinder2_photofinder2_data:/from \
+  -v "$(pwd)":/backup \
+  alpine tar czf /backup/pf2_data_backup.tar.gz -C /from .
+```
+
+`pf2_data_backup.tar.gz`をUSBメモリ・scp等で新環境に転送し、**新環境で復元**:
+
+```bash
+docker volume create photofinder2_photofinder2_data
+docker run --rm \
+  -v photofinder2_photofinder2_data:/to \
+  -v "$(pwd)":/backup \
+  alpine tar xzf /backup/pf2_data_backup.tar.gz -C /to
+docker compose --profile cpu up -d
+```
+
+**`models`は移行しなくてよい**。モデル自体(SigLIP2/YOLOv8x/OCR、計約1.5GB)が
+変わっていなければ、大きなtarを転送するより新環境で`docker compose --profile
+setup run --rm model-fetch`をやり直す方が簡単(新環境にも元々ネット接続は
+必要なので追加の要件にはならない)。
+
+**アプリ内の「バックアップ」機能(設定画面)との違いに注意**: あちらは
+`data/backup/`へのDBスナップショット作成のみで、**復元用のAPI/UIは無い**
+(`photofinder/backup.py`に`snapshot()`/`list_snapshots()`はあるが
+`restore()`相当は未実装)。スナップショットファイルだけを使って軽量に
+移行したい場合は、停止中に手動で`data/photofinder.db`を置き換える必要があり、
+かつサムネ・FAISS索引は無いので初回起動時に再構築(実質的な再スキャン)が
+必要になる。特別な事情がなければ、上記のvolume丸ごとtar方式の方が確実で
+手間も少ない。
+
 ## ネットワーク公開範囲 (認証機構は無い)
 
 アプリ自体にトークン認証等は実装していない。**公開範囲は`docker-compose.yml`の
