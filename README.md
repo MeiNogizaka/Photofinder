@@ -153,6 +153,51 @@ docker compose --profile cuda up -d
 `docker-compose.yml` の `ports:` を変更すれば可能だが、アクセス制御は利用者の責任になる
 （[docs/docker.md](docs/docker.md)「ネットワーク公開範囲」参照）。
 
+### NAS (SMB) 上の写真を使う場合（参考情報）
+
+Dockerのbind mount（`PHOTO_LIBRARY_PATH:/photos:ro`）はDockerホストの**ローカルディレクトリ**を
+そのままコンテナに渡すだけで、SMBを直接しゃべるわけではない。そのためNAS上の写真を使うには、
+先にDockerホスト（Linux）側でSMB共有をOS標準の方法でマウントし、そのマウント先を
+`PHOTO_LIBRARY_PATH` に指定する（旧app2/photofinderのWindows exeはUNCパス`\\NAS\photo`を
+ルートとして直接登録できたが、Docker/Linux専用になったphotofinder2ではこの一段が必要になる）。
+
+```bash
+# cifs-utils (Ubuntu/Debian系)
+sudo apt-get install -y cifs-utils
+
+# 認証情報はマウントコマンドの引数に直接書かず、権限を絞ったファイルに分離する
+sudo mkdir -p /etc/samba/credentials
+sudo tee /etc/samba/credentials/nas-photos > /dev/null <<'EOF'
+username=your-nas-user
+password=your-nas-password
+EOF
+sudo chmod 600 /etc/samba/credentials/nas-photos
+
+# マウント先ディレクトリを用意して一時マウント
+sudo mkdir -p /mnt/nas-photos
+sudo mount -t cifs //nas-host/photos /mnt/nas-photos \
+  -o credentials=/etc/samba/credentials/nas-photos,uid=$(id -u),gid=$(id -g),vers=3.0,ro
+```
+
+`.env` の `PHOTO_LIBRARY_PATH` を `/mnt/nas-photos` に設定すれば、以降は通常のクイックスタートと
+同じ手順で起動できる。`-o ro` はホスト側マウント自体を読み取り専用にする指定（Docker側の
+`:ro` bind mountと二重に保護される）。
+
+**再起動後も自動マウントしたい場合**は `/etc/fstab` に追記する:
+
+```
+//nas-host/photos /mnt/nas-photos cifs credentials=/etc/samba/credentials/nas-photos,uid=1000,gid=1000,vers=3.0,ro,_netdev 0 0
+```
+
+（`_netdev` はネットワークが上がってからマウントを試みるオプション。`uid`/`gid`は`id -u`/`id -g`の
+数値をそのまま書く。）
+
+**WSL2環境の注意**: WSL2はLinux仮想マシンなので、Windows側で「ネットワークドライブの割り当て」
+した共有（`Z:\` 等）をそのまま使うのではなく、上記のように **WSL2のLinux側から直接**
+`mount -t cifs` する方が安定する。NAS側がNFSにも対応しているなら、`nfs-common`
+パッケージ + `mount -t nfs` の方がSMBより単純でLinuxとの相性も良いので、選べるなら検討する
+価値がある。
+
 ## ローカル開発（Dockerを使わない場合、Linux限定）
 
 ```bash
