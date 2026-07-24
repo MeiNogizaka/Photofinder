@@ -57,6 +57,10 @@ python3 -m venv .venv
 
 # Fetch OSM POI data for a prefecture (also doable from the Settings UI)
 .venv/bin/python tools/build_poi_db.py 京都府 大阪府
+
+# Evaluate AI auto-tag accuracy against human confirm/reject decisions (verified!=0).
+# Takes the zip from POST /api/export/dataset (also downloadable from Settings UI)
+.venv/bin/python tools/evaluate_dataset.py dataset-20260725-120000.zip
 ```
 
 There is no automated test suite (no pytest config, no `tests/` directory). Verification is done by

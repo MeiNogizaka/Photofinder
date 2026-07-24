@@ -101,7 +101,10 @@ photofinder2/
 │   ├── download_models.py    ← SigLIP/YOLO/OCR モデルの取得（Dockerのmodel-fetchステージから利用）
 │   ├── build_poi_db.py       ← OSM POI データの CLI 取得（UI からも同機能を実行可）
 │   ├── make_sample_photos.py ← EXIF/GPS 付きサンプル写真の生成
-│   └── fetch_test_photos.py  ← 実写テスト画像の取得（開発用）
+│   ├── fetch_test_photos.py  ← 実写テスト画像の取得（開発用）
+│   └── evaluate_dataset.py   ← データセット書き出し(POST /api/export/dataset)の
+│                                 結果を解析し、AI自動タグの確定/否認率・YOLO信頼度
+│                                 しきい値の感度分析・種名マージン分析を表示する
 ├── docs/
 │   ├── design.md             ← 詳細設計書（app2/photofinder当初案からの差分表 + photofinder2での追加変更）
 │   ├── api-spec.md           ← REST API エンドポイント仕様
