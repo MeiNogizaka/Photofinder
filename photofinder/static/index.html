@@ -1,0 +1,1930 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhotoFinder</title>
+<style>
+  :root {
+    --paper:#f5f7f7; --card:#fff; --ink:#1b2226; --ink2:#5a686e;
+    --line:#d9e0e2; --line2:#e7ecee; --accent:#0e7fa8; --accent-soft:#e3f0f5;
+    --chip:#eef3f4; --ok:#2e8b57;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#14191c; --card:#1c2327; --ink:#e4eaec; --ink2:#93a2a8;
+      --line:#313c42; --line2:#283237; --accent:#4fb3d9; --accent-soft:#16323d;
+      --chip:#253036; --ok:#55b880;
+    }
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font:14px/1.6 "Yu Gothic UI","Hiragino Sans",Meiryo,system-ui,sans-serif;
+    display:flex; flex-direction:column; height:100vh;
+  }
+  header {
+    display:flex; gap:10px; align-items:center; padding:12px 16px;
+    border-bottom:1px solid var(--line); flex:none;
+  }
+  header h1 { font-size:15px; margin:0 12px 0 0; color:var(--accent); }
+  #q {
+    flex:1; max-width:560px; background:var(--card); border:1px solid var(--line);
+    border-radius:6px; padding:7px 12px; color:var(--ink); font:inherit;
+  }
+  #q:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  input[type=date] {
+    background:var(--card); border:1px solid var(--line); border-radius:6px;
+    padding:5px 8px; color:var(--ink); font:inherit; font-size:12.5px;
+  }
+  button {
+    background:var(--accent); color:#fff; border:0; border-radius:6px;
+    padding:7px 14px; font:inherit; font-weight:600; cursor:pointer;
+  }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+
+  #main { flex:1; display:flex; min-height:0; }
+  #gridwrap { flex:1; overflow-y:auto; padding:14px 16px; }
+  #count { font-size:12px; color:var(--ink2); margin:0 0 10px; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; }
+  .thumb {
+    position:relative; border-radius:5px; overflow:hidden; cursor:pointer;
+    aspect-ratio:4/3; background:var(--chip); margin:0;
+  }
+  .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .thumb.sel { outline:2px solid var(--accent); outline-offset:2px; }
+  .thumb figcaption {
+    position:absolute; left:0; right:0; bottom:0; padding:4px 8px 5px;
+    background:linear-gradient(transparent, rgba(10,16,20,.78));
+    color:#fff; font-size:10.5px;
+  }
+  .thumb figcaption .fname {
+    display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .thumb figcaption .ftags {
+    display:block; font-size:9.5px; opacity:.85; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;
+  }
+
+  #panel {
+    width:320px; flex:none; border-left:1px solid var(--line); background:var(--card);
+    overflow-y:auto; padding:14px 16px; display:none;
+  }
+  #panel.open { display:block; }
+  #panel h2 { font-size:13px; margin:0; word-break:break-all; }
+  #panel .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  #panel img { width:100%; border-radius:5px; margin:10px 0; }
+  #panel dl { display:grid; grid-template-columns:70px 1fr; gap:2px 10px; font-size:12px; margin:8px 0; }
+  #panel dt { color:var(--ink2); } #panel dd { margin:0; word-break:break-all; }
+  .lbl {
+    font-family:ui-monospace,Consolas,monospace; font-size:10px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--ink2); margin:14px 0 6px;
+  }
+  .tags { display:flex; flex-wrap:wrap; gap:5px; }
+  .tag {
+    display:inline-flex; gap:5px; align-items:center; border-radius:4px; padding:2px 8px;
+    font-size:11.5px; background:var(--chip); border:1px solid var(--line2);
+  }
+  .tag.verified { background:var(--accent-soft); color:var(--accent); font-weight:600; }
+  .tag button { background:none; border:0; color:var(--ink2); padding:0 2px; font-size:11px; cursor:pointer; }
+  .tag .ai {
+    font:700 8.5px ui-monospace,Consolas,monospace; letter-spacing:.06em;
+    background:var(--accent); color:#fff; border-radius:3px; padding:1px 4px;
+  }
+  .manual-badge {
+    font:700 8.5px ui-monospace,Consolas,monospace; letter-spacing:.06em;
+    background:var(--ok); color:#fff; border-radius:3px; padding:1px 4px; margin-left:4px;
+  }
+  #pPlaceView .edit-btn {
+    background:none; border:0; color:var(--accent); cursor:pointer; font-size:11px; padding:0 2px;
+  }
+  #pPlaceEdit input {
+    width:100%; margin:0 0 6px; background:var(--paper); border:1px solid var(--line);
+    border-radius:6px; padding:6px 9px; color:var(--ink); font:inherit; font-size:12px;
+  }
+  .wmpos-grid {
+    flex:none; display:grid; grid-template-columns:repeat(3,22px); grid-template-rows:repeat(3,22px); gap:3px;
+  }
+  .wmpos-btn {
+    width:22px; height:22px; padding:0; margin:0; border-radius:4px; cursor:pointer;
+    border:1px solid var(--line); background:var(--paper); display:flex; align-items:center; justify-content:center;
+  }
+  .wmpos-btn::after { content:""; width:6px; height:6px; border-radius:50%; background:var(--ink2); }
+  .wmpos-btn.active { border-color:var(--accent); background:var(--accent-soft); }
+  .wmpos-btn.active::after { background:var(--accent); }
+  .wmpos-center { width:22px; height:22px; }
+  #tagInput {
+    width:100%; margin-top:8px; background:var(--paper); border:1px solid var(--line);
+    border-radius:6px; padding:6px 10px; color:var(--ink); font:inherit; font-size:12.5px;
+  }
+  .post-row {
+    display:flex; flex-direction:column; gap:2px; background:var(--chip);
+    border:1px solid var(--line2); border-radius:6px; padding:6px 9px; margin-bottom:6px; font-size:11.5px;
+  }
+  .post-row .row1 { display:flex; align-items:center; gap:6px; }
+  .post-row a { color:var(--accent); word-break:break-all; flex:1; text-decoration:none; }
+  .post-row a:hover { text-decoration:underline; }
+  .post-row button { background:none; border:0; color:var(--ink2); padding:0 2px; font-size:11px; cursor:pointer; flex:none; }
+  .post-row .meta { color:var(--ink2); font-size:10.5px; }
+  #postAddRow { display:flex; gap:6px; margin-top:4px; }
+  #postUrlInput {
+    flex:1; background:var(--paper); border:1px solid var(--line);
+    border-radius:6px; padding:6px 9px; color:var(--ink); font:inherit; font-size:12px;
+  }
+  #postDupWarning {
+    margin-top:8px; font-size:11px; color:var(--ink2); background:var(--accent-soft);
+    border:1px solid var(--accent); border-radius:6px; padding:7px 9px;
+  }
+  #postDupWarning[hidden] { display:none; }
+  #postDupWarning .dup-item { display:flex; align-items:center; gap:6px; margin-top:5px; }
+  #postDupWarning .dup-item img { width:32px; height:32px; object-fit:cover; border-radius:3px; flex:none; }
+  #archiveCandidates {
+    max-height:260px; overflow-y:auto; display:grid; gap:6px; margin-top:4px;
+  }
+  #archiveCandidates .cand-row {
+    display:flex; align-items:center; gap:8px; cursor:pointer; background:var(--paper);
+    border:1px solid var(--line); border-radius:6px; padding:6px 9px; font-size:11px;
+  }
+  #archiveCandidates .cand-row img { width:36px; height:36px; object-fit:cover; border-radius:3px; flex:none; }
+  #archiveCandidates .cand-row .cand-text { color:var(--ink2); }
+  .btns { display:flex; gap:6px; margin-top:6px; }
+  .btns button { font-size:11.5px; padding:4px 10px; }
+
+  footer {
+    flex:none; display:flex; gap:16px; align-items:center; padding:5px 16px;
+    border-top:1px solid var(--line); font:11px ui-monospace,Consolas,monospace; color:var(--ink2);
+  }
+  footer .dot { width:7px; height:7px; border-radius:50%; background:var(--ink2); }
+  footer .dot.busy { background:var(--accent); }
+  #scanProgress { display:inline-flex; align-items:center; gap:8px; }
+  #scanBar { display:inline-block; width:120px; height:6px; border-radius:3px;
+    background:var(--line); overflow:hidden; }
+  #scanBar i { display:block; height:100%; width:0%; background:var(--accent);
+    transition:width .3s ease; }
+  #addRoot { margin-left:auto; font-size:11px; padding:3px 10px; }
+  header #orderBtn, header #postedBtn { flex:none; }
+  dialog {
+    background:var(--card); color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; padding:20px; min-width:420px;
+  }
+  dialog::backdrop { background:rgba(10,16,20,.5); }
+  /* テキスト系入力のみ全幅にする (チェックボックス/スライダーに当てると
+     ボックスが全幅に伸びて中央に描画され、ラベル文が端に追いやられる) */
+  dialog input:not([type=checkbox]):not([type=range]) {
+    width:100%; margin:4px 0 12px; background:var(--paper);
+    border:1px solid var(--line); border-radius:6px; padding:7px 10px;
+    color:var(--ink); font:inherit;
+  }
+  dialog input[type=checkbox] { width:auto; margin:0; flex:none; accent-color:var(--accent); }
+  dialog .roots-list {
+    display:grid; gap:6px; margin:8px 0; max-height:180px; overflow-y:auto;
+  }
+  dialog .root-row {
+    display:flex; align-items:center; gap:10px; background:var(--paper);
+    border:1px solid var(--line); border-radius:6px; padding:7px 10px; font-size:12px;
+  }
+  dialog .root-row .path {
+    font-family:ui-monospace,Consolas,monospace; word-break:break-all; flex:1;
+  }
+  dialog .root-row small { color:var(--ink2); white-space:nowrap; }
+  .empty { color:var(--ink2); text-align:center; margin-top:80px; }
+  .empty b { display:block; font-size:16px; margin-bottom:6px; }
+
+  #revbar {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--accent-soft); border:1px solid var(--accent); border-radius:6px;
+    padding:8px 12px; margin-bottom:12px; font-size:12.5px;
+  }
+  /* display:flex が hidden 属性 (UA の display:none) に勝ってしまうため明示 */
+  #revbar[hidden] { display:none; }
+  #geoBanner {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--chip); border:1px solid var(--line); border-radius:6px;
+    padding:8px 12px; margin:0 16px 10px; font-size:12.5px;
+  }
+  #geoBanner[hidden] { display:none; }
+  #geoBanner .btns { display:flex; gap:6px; flex:none; }
+  .sect-h {
+    grid-column:1/-1; font:600 11px ui-monospace,Consolas,monospace;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--ink2); margin:6px 0 0;
+  }
+  .sect-h.exact { color:var(--ok); }
+  .thumb .badge {
+    position:absolute; top:6px; left:6px; font-size:10px; font-weight:700;
+    background:var(--ok); color:#fff; border-radius:3px; padding:1px 6px;
+  }
+  .thumb .badge.sim { background:rgba(15,25,30,.6); font-weight:400; }
+  body.dragging::after {
+    content:"画像をドロップして原本を検索"; position:fixed; inset:0; z-index:99;
+    display:grid; place-items:center; font-size:20px; font-weight:700; color:var(--accent);
+    background:color-mix(in srgb, var(--paper) 82%, transparent);
+    border:3px dashed var(--accent); pointer-events:none;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PhotoFinder</h1>
+  <input id="q" type="search" placeholder="自然言語で検索（例: 青い鳥 / 紅葉の寺）— 画像をドロップ/貼り付けで原本検索" autocomplete="off">
+  <input id="dateFrom" type="date" title="この日以降">
+  <input id="dateTo" type="date" title="この日以前">
+  <button id="searchBtn">検索</button>
+  <button id="orderBtn" class="ghost" title="時系列の並び順を切り替え">新しい順 ↓</button>
+  <button id="postedBtn" class="ghost" title="X投稿状況で絞り込み">投稿状況: 全て</button>
+</header>
+
+<div id="geoBanner" hidden>
+  <span id="geoBannerText"></span>
+  <div class="btns">
+    <button id="geoBannerFetch" style="font-size:11.5px; padding:4px 10px">今すぐ取得</button>
+    <button id="geoBannerClose" class="ghost" style="font-size:11.5px; padding:4px 10px">閉じる</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="gridwrap">
+    <div id="revbar" hidden>
+      <span id="revinfo"></span>
+      <button class="ghost" style="font-size:11.5px;padding:3px 10px" onclick="exitReverse()">✕ 一覧に戻る</button>
+    </div>
+    <p id="count"></p>
+    <div id="grid"></div>
+    <div id="empty" class="empty" hidden>
+      <b>写真がまだありません</b>
+      右下の「＋ フォルダを追加」から走査フォルダを登録してください
+    </div>
+  </div>
+
+  <aside id="panel">
+    <div class="row">
+      <h2 id="pName"></h2>
+      <button class="ghost" style="padding:2px 8px" onclick="closePanel()">✕</button>
+    </div>
+    <img id="pImg" alt="">
+    <div class="btns">
+      <button class="ghost" id="pOpen">場所を開く</button>
+      <button class="ghost" id="pOrig">原本を表示</button>
+      <button class="ghost" id="pExport">書き出し…</button>
+    </div>
+    <p class="lbl">撮影情報</p>
+    <dl id="pExif"></dl>
+    <div class="row" style="margin-top:8px; align-items:flex-start">
+      <p class="lbl" style="margin:0; flex:none; width:70px">場所</p>
+      <div id="pPlaceView" style="flex:1; font-size:12px"></div>
+    </div>
+    <div id="pBirdWrap" hidden>
+      <p class="lbl">種名推定</p>
+      <div id="pBird" style="font-size:12px"></div>
+    </div>
+    <div id="pOcrWrap" hidden>
+      <p class="lbl">写真内テキスト (OCR)</p>
+      <div id="pOcr" style="font-size:12px; color:var(--ink2)"></div>
+    </div>
+    <p class="lbl">タグ</p>
+    <div class="tags" id="pTags"></div>
+    <input id="tagInput" placeholder="タグを追加して Enter" list="tagList">
+    <datalist id="tagList"></datalist>
+    <datalist id="placeSuggestList"></datalist>
+    <p class="lbl">X投稿</p>
+    <div id="pPosts"></div>
+    <div id="postAddRow">
+      <input id="postUrlInput" placeholder="ツイートURLを貼り付け">
+      <button id="postAddBtn" class="ghost" style="font-size:11.5px">追加</button>
+    </div>
+    <div id="postDupWarning" hidden></div>
+  </aside>
+</div>
+
+<footer>
+  <span class="dot" id="statusDot"></span>
+  <span id="statusText">待機中</span>
+  <span id="scanProgress" hidden>
+    <span id="scanBar"><i></i></span>
+    <span id="scanEta"></span>
+  </span>
+  <button id="scanBtn" class="ghost" style="font-size:11px;padding:3px 10px">今すぐスキャン</button>
+  <button id="cancelBtn" class="ghost" style="font-size:11px;padding:3px 10px" hidden>停止</button>
+  <button id="addRoot" class="ghost">＋ フォルダを追加</button>
+  <button id="settingsBtn" class="ghost" style="font-size:11px;padding:3px 10px" title="設定">⚙ 設定</button>
+</footer>
+
+<dialog id="setDlg" style="min-width:520px">
+  <b>設定</b>
+
+  <p class="lbl" style="margin-top:14px">対象フォルダ</p>
+  <div id="setRoots" class="roots-list">読み込み中…</div>
+  <div class="btns">
+    <button id="setAddRoot" class="ghost" style="font-size:11.5px">＋ フォルダを追加</button>
+  </div>
+  <p style="font-size:11px; color:var(--ink2); margin:6px 0 0">
+    除外すると写真は検索から消えますが、フォルダ内のファイルには一切触れません
+  </p>
+
+  <p class="lbl" style="margin-top:16px">スキャン</p>
+  <div style="font-size:13px">
+    <label style="display:flex; gap:8px; align-items:center; cursor:pointer">
+      <input id="setScanStartup" type="checkbox">
+      起動時に自動スキャンする
+    </label>
+    <p style="font-size:11.5px; color:var(--ink2); margin:6px 0 0 24px">
+      オフの場合、スキャンは「今すぐスキャン」ボタンを押したときのみ実行されます
+    </p>
+  </div>
+  <p class="lbl" style="margin-top:16px">場所データ (OSM POI)</p>
+  <div id="setPoiList" class="roots-list" style="margin-bottom:8px">確認中…</div>
+  <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px">
+    <select id="poiPrefSelect" style="flex:1; background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:12.5px"></select>
+    <button id="poiFetchBtn" class="ghost" style="font-size:11.5px; flex:none">取得</button>
+  </div>
+  <div id="poiFetchStatus" style="font-size:11.5px; color:var(--ink2); margin-bottom:10px"></div>
+  <div class="btns">
+    <button id="setPoiApply" class="ghost" style="font-size:11.5px">POIを写真に再適用</button>
+  </div>
+
+  <p class="lbl" style="margin-top:14px">カスタム地点</p>
+  <div id="poiCustomList" class="roots-list" style="margin-bottom:8px"></div>
+  <div style="display:grid; grid-template-columns:1fr 90px 90px auto; gap:6px; align-items:center">
+    <input id="poiCustomName" placeholder="地点名 (例: 実家の裏山)" style="margin:0">
+    <input id="poiCustomLat" placeholder="緯度" style="margin:0">
+    <input id="poiCustomLon" placeholder="経度" style="margin:0">
+    <button id="poiCustomAdd" class="ghost" style="font-size:11.5px">追加</button>
+  </div>
+  <p style="font-size:11px; color:var(--ink2); margin:6px 0 0">
+    緯度経度は写真詳細の「場所」欄や地図アプリから調べられます。追加した地点は周辺の写真に自動的にマッチします
+  </p>
+  <p class="lbl" style="margin-top:16px">バックアップ</p>
+  <label style="display:flex; gap:8px; align-items:center; cursor:pointer; font-size:13px">
+    <input id="setBackupAuto" type="checkbox">
+    週次スナップショットを自動作成（3世代保持）
+  </label>
+  <div id="setBackupStatus" style="font-size:12px; color:var(--ink2); margin:6px 0 8px">
+    確認中…
+  </div>
+  <label style="display:flex; gap:8px; align-items:center; cursor:pointer; font-size:12.5px; margin-bottom:8px">
+    <input id="setBackupRebuild" type="checkbox">
+    作成時にベクトル索引も再構築する
+  </label>
+  <div class="btns">
+    <button id="setBackupNow" class="ghost" style="font-size:11.5px">今すぐ作成</button>
+  </div>
+  <p style="font-size:11px; color:var(--ink2); margin:6px 0 0">
+    対象はDBのみ（サムネ・検索インデックスはDBから再生成可能）。
+    完全バックアップは data フォルダごとコピーしてください
+  </p>
+
+  <p class="lbl" style="margin-top:16px">データセット書き出し</p>
+  <label style="display:flex; gap:8px; align-items:center; cursor:pointer; font-size:12.5px">
+    <input id="setDatasetNegatives" type="checkbox" checked>
+    ✗否認したタグも陰性例として含める
+  </label>
+  <label style="display:flex; gap:8px; align-items:center; cursor:pointer; font-size:12.5px; margin-bottom:8px">
+    <input id="setDatasetBirdDetail" type="checkbox" checked>
+    野鳥の候補詳細（top-3・信頼度）も含める
+  </label>
+  <div class="btns">
+    <button id="setDatasetExport" class="ghost" style="font-size:11.5px">人手タグ付け済み写真を書き出す</button>
+  </div>
+  <p style="font-size:11px; color:var(--ink2); margin:6px 0 0">
+    ✓確定/✗否認した写真とタグを、教師/評価データセット用にJSONL+画像zipで
+    書き出します（画像は1600pxプレビュー。未レビューのタグは対象外）
+  </p>
+
+  <p class="lbl" style="margin-top:16px">AI処理</p>
+  <div id="setAccelStatus" style="font-size:12px; color:var(--ink2); margin-bottom:8px">
+    確認中…
+  </div>
+  <p style="font-size:11px; color:var(--ink2); margin:0 0 8px">
+    CUDA (NVIDIA GPU) が使えない環境では自動的にCPUで動作します。
+    各モデルは初回使用時（検索・スキャン）まで読み込まれないため、それまでは「未使用」と表示されます
+  </p>
+
+  <p class="lbl" style="margin-top:16px">メンテナンス</p>
+  <div id="setVecStatus" style="font-size:12px; color:var(--ink2); margin-bottom:8px">
+    確認中…
+  </div>
+  <div class="btns">
+    <button id="setVecRebuild" class="ghost" style="font-size:11.5px">ベクトル索引を再構築</button>
+  </div>
+  <p style="font-size:11px; color:var(--ink2); margin:6px 0 0">
+    再インデックスで蓄積した重複ベクトルを整理します（検索結果は変わりません）
+  </p>
+
+  <p class="lbl" style="margin-top:16px">Xアーカイブ取り込み（実験的機能）</p>
+  <p style="font-size:11px; color:var(--ink2); margin:0 0 8px">
+    Xの「データのアーカイブ」(zip)を取り込み、過去の投稿とローカル写真を自動照合します。
+    切り抜き・透かし後の画像でも類似度で照合を試みますが、精度は未検証です。
+    自動ではリンクせず、必ず下のレビューで確認してから確定します
+  </p>
+  <input id="archiveFileInput" type="file" accept=".zip" style="margin-bottom:8px">
+  <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:11.5px">
+    <span style="color:var(--ink2)">対象期間（「対象期間取り込み開始」使用時のみ）</span>
+    <input id="archiveDateFrom" type="date" title="この日以降に投稿されたツイートのみ">
+    <span style="color:var(--ink2)">〜</span>
+    <input id="archiveDateTo" type="date" title="この日以前に投稿されたツイートのみ">
+  </div>
+  <p style="font-size:10.5px; color:var(--ink2); margin:0 0 8px">
+    大量の投稿を一度に照合すると時間がかかるため、期間を区切って取り込むこともできます。
+    「前回の続きから」は、これまでにリンク済みの投稿の最新日を起点に数日分の余裕を
+    持たせた期間で自動的に取り込みます（Xのアーカイブ自体には差分取得の手段がないため、
+    あくまで目安です）
+  </p>
+  <div class="btns">
+    <button id="archiveImportAllBtn" class="ghost" style="font-size:11.5px">全件取り込み開始</button>
+    <button id="archiveImportRangeBtn" class="ghost" style="font-size:11.5px">対象期間取り込み開始</button>
+    <button id="archiveSuggestBtn" class="ghost" style="font-size:11.5px">前回の続きから</button>
+  </div>
+  <div id="archiveImportStatus" style="font-size:11.5px; color:var(--ink2); margin:8px 0"></div>
+  <div id="archiveThresholdRow" hidden style="display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:11.5px">
+    <span style="color:var(--ink2)">類似度</span>
+    <input id="archiveThreshold" type="number" min="0" max="1" step="0.01" value="0.85" style="width:64px; margin:0">
+    <span style="color:var(--ink2)">以上をチェック</span>
+    <button id="archiveThresholdBtn" class="ghost" style="font-size:11px; padding:3px 10px">適用</button>
+    <span id="archiveSelectedCount" style="color:var(--ink2); margin-left:auto"></span>
+  </div>
+  <div id="archiveCandidates"></div>
+  <div class="btns" id="archiveConfirmBtns" hidden>
+    <button id="archiveConfirmBtn" style="font-size:11.5px">選択した候補をリンク</button>
+    <button id="archiveDismissBtn" class="ghost" style="font-size:11.5px">すべて破棄</button>
+  </div>
+
+  <p class="lbl" style="margin-top:16px">終了</p>
+  <div class="btns">
+    <button id="setShutdown" class="ghost" style="font-size:11.5px; color:#c0392b">PhotoFinderを終了</button>
+  </div>
+  <p style="font-size:11px; color:var(--ink2); margin:6px 0 0">
+    アプリを終了します。この画面を含む全てのタブが使えなくなります
+  </p>
+
+  <p style="font-size:10.5px; color:var(--ink2); margin:18px 0 0; border-top:1px solid var(--line); padding-top:10px">
+    地名情報の一部に GeoNames.org のデータ（CC BY 4.0）および
+    OpenStreetMap のデータ（© OpenStreetMap contributors, ODbL）を使用しています。
+  </p>
+
+  <div class="btns" style="justify-content:flex-end; margin-top:14px">
+    <button class="ghost" onclick="setDlg.close()">閉じる</button>
+  </div>
+</dialog>
+
+<dialog id="expDlg" style="min-width:640px">
+  <b>書き出し</b> <span id="expName" style="color:var(--ink2);font-size:12px"></span>
+  <div style="display:flex; gap:16px; margin-top:12px">
+    <div>
+      <canvas id="expCanvas" width="420" height="300" style="touch-action:none; cursor:crosshair;
+              background:var(--chip); border-radius:6px; max-width:420px; display:block"></canvas>
+      <p style="font-size:10.5px; color:var(--ink2); margin:6px 0 0">
+        画像上をドラッグして切り出し範囲を指定（枠内をドラッグで移動、四隅/辺をドラッグで拡縮）
+      </p>
+      <div style="display:flex; gap:6px; margin-top:8px" id="expAspects">
+        <button class="ghost" data-a="" style="font-size:11px;padding:3px 10px">自由</button>
+        <button class="ghost" data-a="1" style="font-size:11px;padding:3px 10px">1:1</button>
+        <button class="ghost" data-a="0.8" style="font-size:11px;padding:3px 10px">4:5</button>
+        <button class="ghost" data-a="1.7778" style="font-size:11px;padding:3px 10px">16:9</button>
+        <button class="ghost" data-a="1.5" style="font-size:11px;padding:3px 10px">3:2</button>
+      </div>
+    </div>
+    <div style="width:220px; font-size:12px">
+      <p class="lbl" style="margin-top:0">透かし</p>
+      <input id="expWm" placeholder="© your name" style="width:100%; margin:0 0 6px">
+      <div style="display:flex; gap:10px; margin-bottom:6px">
+        <div id="expWmPosGrid" class="wmpos-grid" title="表示位置"></div>
+        <select id="expWmFont" style="flex:1; background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:4px; font-size:11px"></select>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center; font-size:11px; color:var(--ink2)">
+        <span style="flex:none">透過率</span>
+        <input id="expWmOp" type="range" min="0.1" max="1" step="0.05" value="0.6" style="flex:1">
+        <span id="expWmOpVal" style="flex:none; width:32px; text-align:right">60%</span>
+      </div>
+      <p class="lbl">プライバシー</p>
+      <label><input id="expGps" type="checkbox" checked> GPS・機材情報を除去</label>
+      <p class="lbl">出力</p>
+      <div style="display:grid; grid-template-columns:44px 1fr; gap:4px 8px; align-items:center">
+        <span>形式</span>
+        <select id="expFormat" style="background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:4px">
+          <option value="png" selected>PNG</option>
+          <option value="jpeg">JPEG</option>
+        </select>
+        <span>長辺</span>
+        <select id="expEdge" style="background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:4px">
+          <option value="" selected>原寸</option>
+          <option value="2048">2048px</option><option value="1600">1600px</option>
+          <option value="1024">1024px</option>
+        </select>
+        <span id="expQLabel">品質</span><input id="expQ" type="number" min="50" max="100" value="95" style="width:64px; margin:0">
+      </div>
+      <div class="btns" style="margin-top:14px">
+        <button id="expGo" style="flex:1">書き出す</button>
+        <button class="ghost" onclick="expDlg.close()">閉じる</button>
+      </div>
+      <p id="expResult" style="font-size:11px; word-break:break-all; color:var(--ink2)"></p>
+      <p style="font-size:10.5px; color:var(--ink2)">原本は変更されません</p>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="rootDlg">
+  <b>走査フォルダを追加</b>
+  <p style="margin:8px 0 2px">フォルダパス</p>
+  <input id="rootPath" placeholder="D:\Photos または \\NAS\photo">
+  <p style="margin:0 0 2px">対象拡張子（; 区切り）</p>
+  <input id="rootExt" value="jpg;jpeg;png;heic">
+  <label style="display:flex; gap:8px; align-items:center; cursor:pointer; margin-top:10px; font-size:13px">
+    <input id="rootRecursive" type="checkbox" checked>
+    サブフォルダも含めて走査する（再帰）
+  </label>
+  <div class="btns" style="justify-content:flex-end; margin-top:12px">
+    <button class="ghost" onclick="rootDlg.close()">キャンセル</button>
+    <button id="rootAddBtn">追加してスキャン</button>
+  </div>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let selectedId = null, offset = 0, loading = false, done = false;
+
+// innerHTML へ差し込む動的文字列 (ファイル名・タグ名・パス) のエスケープ。
+// ローカル単独利用でも <img onerror=...>.jpg のようなファイル名で発火しうる
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// Windows/POSIX 両方の区切りに対応してファイル名部分を取り出す
+const basename = (p) => String(p ?? "").split(/[\\/]/).pop();
+
+async function api(path, opts) {
+  const res = await fetch("/api" + path, opts);
+  if (!res.ok) {
+    const b = await res.json().catch(() => null);
+    throw new Error(b?.detail || b?.error?.message || "HTTP " + res.status);
+  }
+  return res.json();
+}
+
+let sortOrder = "desc";  // 時系列の並び順 (ブラウズ時)
+let postedFilter = null;  // X投稿状況の絞り込み: null=全て / true=投稿済み / false=未投稿
+
+function params() {
+  const p = new URLSearchParams();
+  if ($("q").value) p.set("q", $("q").value);
+  if ($("dateFrom").value) p.set("date_from", $("dateFrom").value);
+  if ($("dateTo").value) p.set("date_to", $("dateTo").value);
+  if (postedFilter !== null) p.set("posted", postedFilter);
+  p.set("order", sortOrder);
+  p.set("offset", offset);
+  return p;
+}
+
+function updateOrderBtnState() {
+  // order はブラウズ時 (q空) のみ有効。キーワード検索中は RRF ランキングが優先され
+  // 無視されるため、押しても効果がないことが分かるよう無効化する
+  const searching = !!$("q").value;
+  $("orderBtn").disabled = searching;
+  $("orderBtn").title = searching
+    ? "並び順の切り替えは検索キーワードが無いときのみ有効です"
+    : "時系列の並び順を切り替え";
+}
+
+async function runSearch(reset = true) {
+  if (loading) return;
+  loading = true;
+  updateOrderBtnState();
+  if (reset) {
+    offset = 0; done = false; $("grid").innerHTML = "";
+    reverseMode = false; $("revbar").hidden = true;
+  }
+  try {
+    const data = await api("/search?" + params());
+    $("count").textContent = data.total_estimate + " 件";
+    $("empty").hidden = data.total_estimate > 0 || !!$("q").value;
+    for (const it of data.items) {
+      const fig = document.createElement("figure");
+      fig.className = "thumb"; fig.dataset.id = it.id;
+      fig.innerHTML = `<img src="${esc(it.thumb_url)}" loading="lazy" decoding="async" alt="">
+        <figcaption><span class="fname">${esc(it.filename)}</span>${
+          it.top_tags.length ? `<span class="ftags">${esc(it.top_tags.join(" · "))}</span>` : ""
+        }</figcaption>`;
+      fig.onclick = () => select(it.id);
+      $("grid").appendChild(fig);
+    }
+    if (!data.next_cursor) done = true; else offset += data.items.length;
+  } finally { loading = false; }
+}
+
+async function select(id) {
+  selectedId = id;
+  document.querySelectorAll(".thumb").forEach(t =>
+    t.classList.toggle("sel", +t.dataset.id === id));
+  const p = await api("/photos/" + id);
+  $("pName").textContent = basename(p.path);
+  $("pImg").src = "/api/photos/" + id + "/preview?h=" + p.xxhash;
+  $("pOpen").onclick = () => {
+    if (IN_DOCKER) return;
+    api("/photos/" + id + "/open-in-explorer", {method:"POST"});
+  };
+  $("pOrig").onclick = () => window.open("/api/photos/" + id + "/file");
+  const e = p.exif, dl = $("pExif");
+  dl.innerHTML = "";
+  const rows = [
+    ["日時", p.taken_at?.replace("T", " ") ?? "不明"],
+    ["サイズ", `${p.width}×${p.height} · ${(p.size/1048576).toFixed(1)} MB`],
+    ["カメラ", e.camera_model ?? "—"],
+    ["レンズ", e.lens_model ?? "—"],
+    ["設定", e.focal_length_mm ? `${e.focal_length_mm}mm f/${e.f_number} ${e.shutter_speed}s ISO${e.iso}` : "—"],
+    ["パス", p.path],
+  ];
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    dl.append(dt, dd);
+  }
+  renderPlace(p);
+  renderBirds(p.detections);
+  $("pOcrWrap").hidden = !p.ocr.length;
+  $("pOcr").textContent = p.ocr.map(o => o.text).join(" / ");
+  $("pExport").onclick = () => openExport(p);
+  renderTags(p.tags);
+  renderPosts(p.posts);
+  renderDupWarning([]);  // 前回選択分の警告表示をクリア。結果が来次第 loadSimilarPosted が更新する
+  loadSimilarPosted(id);
+  $("panel").classList.add("open");
+}
+
+function renderBirds(detections) {
+  const birds = detections.filter(d => d.bird);
+  $("pBirdWrap").hidden = !birds.length;
+  if (!birds.length) return;
+  const box = $("pBird");
+  box.innerHTML = "";
+  for (const d of birds) {
+    const b = d.bird;
+    const div = document.createElement("div");
+    div.style.marginBottom = "8px";
+    if (b.species_ja) {
+      // 自動確定済み: タグ欄にも species タグが入っている
+      div.innerHTML = `<b>${esc(b.species_ja)}</b>
+        <small style="color:var(--ink2)">自動判定 · ${esc(b.species_sci)}</small>`;
+    } else {
+      // 判定が付かなかった → top-3 を候補として提示し、クリックで確定タグ化
+      div.innerHTML = `<span style="color:var(--ink2)">野鳥（種名は候補から選択）</span><br>`;
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex; flex-wrap:wrap; gap:5px; margin-top:4px";
+      for (const [name] of b.topk) {
+        const chip = document.createElement("button");
+        chip.className = "ghost";
+        chip.style.cssText = "font-size:11px; padding:2px 9px; border-radius:100px";
+        chip.textContent = "+ " + name;
+        chip.onclick = async () => {
+          await api(`/photos/${selectedId}/tags`, {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({name}),
+          });
+          select(selectedId);
+        };
+        row.appendChild(chip);
+      }
+      div.appendChild(row);
+    }
+    box.appendChild(div);
+  }
+}
+
+async function patchTag(tagId, verified) {
+  await api(`/photos/${selectedId}/tags/${tagId}`, {
+    method:"PATCH", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({verified}),
+  });
+  select(selectedId);
+}
+
+function renderPlace(p) {
+  const g = p.geo;
+  const isManual = g && g.poi_source === "manual";
+  const text = g ? [g.prefecture, g.city, g.poi_name].filter(Boolean).join(" ") : "";
+  const hasGps = !!p.exif?.gps;
+  const view = $("pPlaceView");
+  view.innerHTML = "";
+
+  const line = document.createElement("div");
+  const span = document.createElement("span");
+  span.textContent = text || (hasGps ? "（場所名なし）" : "GPS情報なし");
+  line.appendChild(span);
+  if (isManual) {
+    const badge = document.createElement("span");
+    badge.className = "manual-badge"; badge.textContent = "手動";
+    line.appendChild(badge);
+  }
+  const editBtn = document.createElement("button");
+  editBtn.className = "edit-btn"; editBtn.textContent = "編集";
+  editBtn.onclick = () => showPlaceEdit(p, g?.poi_name || "");
+  line.appendChild(document.createTextNode(" "));
+  line.appendChild(editBtn);
+  if (isManual) {
+    const revertBtn = document.createElement("button");
+    revertBtn.className = "edit-btn"; revertBtn.textContent = "自動に戻す";
+    revertBtn.onclick = async () => {
+      await api(`/photos/${p.id}/place`, {
+        method: "PATCH", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({poi_name: null}),
+      });
+      select(p.id);
+    };
+    line.appendChild(document.createTextNode(" "));
+    line.appendChild(revertBtn);
+  }
+  view.appendChild(line);
+}
+
+function showPlaceEdit(p, current) {
+  const view = $("pPlaceView");
+  view.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.id = "pPlaceEdit";
+  const input = document.createElement("input");
+  input.value = current;
+  input.placeholder = "場所名を入力（例: 清水寺）";
+  input.setAttribute("list", "placeSuggestList");
+  input.addEventListener("input", async () => {
+    if (input.value.length < 1) return;
+    const results = await api(`/geo/poi/search?q=${encodeURIComponent(input.value)}`);
+    $("placeSuggestList").innerHTML =
+      results.map(r => `<option value="${esc(r.name)}">`).join("");
+  });
+  wrap.appendChild(input);
+
+  const btns = document.createElement("div");
+  btns.className = "btns";
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "保存"; saveBtn.style.cssText = "font-size:11.5px; padding:4px 10px";
+  saveBtn.onclick = async () => {
+    const name = input.value.trim();
+    if (!name) { alert("場所名を入力してください（削除する場合は右の「クリア」を使用）"); return; }
+    await api(`/photos/${p.id}/place`, {
+      method: "PATCH", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({poi_name: name}),
+    });
+    select(p.id);
+  };
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "ghost"; cancelBtn.textContent = "キャンセル";
+  cancelBtn.style.cssText = "font-size:11.5px; padding:4px 10px";
+  cancelBtn.onclick = () => renderPlace(p);
+  btns.append(saveBtn, cancelBtn);
+  if (current) {
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "ghost"; clearBtn.textContent = "クリア（自動判定に戻す）";
+    clearBtn.style.cssText = "font-size:11.5px; padding:4px 10px";
+    clearBtn.onclick = async () => {
+      await api(`/photos/${p.id}/place`, {
+        method: "PATCH", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({poi_name: null}),
+      });
+      select(p.id);
+    };
+    btns.appendChild(clearBtn);
+  }
+  wrap.appendChild(btns);
+  view.appendChild(wrap);
+  input.focus();
+}
+
+function renderTags(tags) {
+  const box = $("pTags");
+  box.innerHTML = "";
+  for (const t of tags) {
+    if (t.verified === -1) continue;
+    const el = document.createElement("span");
+    el.className = "tag" + (t.verified === 1 ? " verified" : "");
+    const isAuto = t.source !== "user";
+    // AI 判定タグは「AI」バッジで明示 (仕様: AIが判別したことが分かるように)
+    const aiBadge = (isAuto && t.verified === 0) ? `<span class="ai">AI</span> ` : "";
+    // 自動タグ(未確定)は ✓確定 / ✗否認。それ以外は × 削除
+    const confBadge = (isAuto && t.verified === 0 && t.conf != null && t.source !== "color"
+                       && t.source !== "bird")
+      ? ` <small>${Math.round(t.conf * 100)}%</small>` : "";
+    const actions = (isAuto && t.verified === 0)
+      ? `<button title="確定" data-ok>✓</button><button title="否認（検索から除外）" data-ng>✗</button>`
+      : `<button title="削除" data-x>×</button>`;
+    el.innerHTML = `${aiBadge}${esc(t.name)}${confBadge} ${actions}`;
+    el.querySelector("[data-ok]")?.addEventListener("click", () => patchTag(t.id, 1));
+    el.querySelector("[data-ng]")?.addEventListener("click", () => patchTag(t.id, -1));
+    el.querySelector("[data-x]")?.addEventListener("click", async () => {
+      await api(`/photos/${selectedId}/tags/${t.id}`, {method:"DELETE"});
+      select(selectedId);
+    });
+    box.appendChild(el);
+  }
+}
+
+// --- X投稿リンク ---
+
+function renderPosts(posts) {
+  const box = $("pPosts");
+  box.innerHTML = "";
+  if (!posts.length) {
+    box.innerHTML = '<p style="font-size:11.5px; color:var(--ink2); margin:0 0 4px">まだリンクされた投稿はありません</p>';
+    return;
+  }
+  for (const post of posts) {
+    const row = document.createElement("div");
+    row.className = "post-row";
+    const meta = [post.posted_at, post.caption_snippet].filter(Boolean).join(" · ");
+    row.innerHTML = `
+      <div class="row1">
+        <a href="${esc(post.url)}" target="_blank" rel="noopener noreferrer">${esc(post.url)}</a>
+        <button title="削除" data-x>×</button>
+      </div>
+      ${meta ? `<span class="meta">${esc(meta)}</span>` : ""}`;
+    row.querySelector("[data-x]").addEventListener("click", async () => {
+      await api(`/photos/${selectedId}/posts/${post.id}`, {method: "DELETE"});
+      select(selectedId);
+    });
+    box.appendChild(row);
+  }
+}
+
+function renderDupWarning(candidates) {
+  const box = $("postDupWarning");
+  if (!candidates.length) { box.hidden = true; box.innerHTML = ""; return; }
+  box.hidden = false;
+  box.innerHTML = "似た写真が既に投稿済みです。重複投稿にご注意ください:" +
+    candidates.map(c => `
+      <div class="dup-item">
+        <img src="${esc(c.thumb_url)}" loading="lazy" alt="">
+        <span>${esc(c.filename)} (類似度 ${c.score.toFixed(2)}) —
+          ${c.posts.map(p => `<a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">投稿を見る</a>`).join(", ")}
+        </span>
+      </div>`).join("");
+}
+
+async function loadSimilarPosted(id) {
+  try {
+    renderDupWarning(await api(`/photos/${id}/posts/similar`));
+  } catch {
+    renderDupWarning([]);  // ML未対応等は静かに諦める (機能をブロックしない)
+  }
+}
+
+$("postAddBtn").onclick = async () => {
+  const url = $("postUrlInput").value.trim();
+  if (!url) return;
+  $("postAddBtn").disabled = true;
+  try {
+    const res = await api(`/photos/${selectedId}/posts`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({url}),
+    });
+    $("postUrlInput").value = "";
+    renderDupWarning(res.duplicate_warnings);
+    const p = await api("/photos/" + selectedId);
+    renderPosts(p.posts);
+  } catch (ex) {
+    alert("投稿リンクの追加に失敗しました: " + ex.message);
+  } finally {
+    $("postAddBtn").disabled = false;
+  }
+};
+
+function closePanel() {
+  $("panel").classList.remove("open");
+  document.querySelectorAll(".thumb.sel").forEach(t => t.classList.remove("sel"));
+}
+
+// --- 逆検索（画像 → 原本特定） ---
+let reverseMode = false;
+
+async function reverseSearch(file) {
+  const form = new FormData();
+  form.append("image", file);
+  $("revinfo").textContent = "検索中…";
+  $("revbar").hidden = false;
+  const res = await fetch("/api/search/by-image", {method:"POST", body: form});
+  if (!res.ok) {
+    const b = await res.json().catch(() => null);
+    $("revinfo").textContent = "エラー: " + (b?.detail || res.status);
+    return;
+  }
+  const d = await res.json();
+  reverseMode = true;
+  $("count").textContent = "";
+  $("empty").hidden = true;
+  $("revinfo").textContent =
+    `画像検索: ${file.name || "貼り付け画像"} — 同一候補 ${d.exact.length}件 / 類似 ${d.similar.length}件`;
+  const grid = $("grid");
+  grid.innerHTML = "";
+  const addSection = (label, cls, items, badge) => {
+    if (!items.length) return;
+    grid.insertAdjacentHTML("beforeend", `<div class="sect-h ${cls}">${label}</div>`);
+    for (const it of items) {
+      const fig = document.createElement("figure");
+      fig.className = "thumb"; fig.dataset.id = it.id;
+      fig.innerHTML = `<img src="${esc(it.thumb_url)}" loading="lazy" alt="">
+        <span class="badge ${cls === "exact" ? "" : "sim"}">${esc(badge(it))}</span>
+        <figcaption>${esc(it.filename)}</figcaption>`;
+      fig.onclick = () => select(it.id);
+      grid.appendChild(fig);
+    }
+  };
+  addSection("◉ 同一の可能性が高い", "exact", d.exact, it => `距離 ${it.hamming}`);
+  addSection("類似ショット", "sim", d.similar, it => it.score.toFixed(2));
+  if (!d.exact.length && !d.similar.length)
+    grid.innerHTML = '<p style="color:var(--ink2)">候補が見つかりませんでした</p>';
+  if (d.exact.length) select(d.exact[0].id);  // 最有力候補を即プレビュー
+}
+
+function exitReverse() {
+  reverseMode = false;
+  $("revbar").hidden = true;
+  closePanel();
+  runSearch();
+}
+
+// --- events ---
+$("searchBtn").onclick = () => runSearch();
+// isComposing/keyCode 229: 日本語IMEの変換確定Enterで検索が誤発火しないようにする
+$("q").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) runSearch();
+});
+
+// 画像ドロップ / 貼り付け → 逆検索
+let dragDepth = 0;
+document.addEventListener("dragenter", e => {
+  if ([...e.dataTransfer.items].some(i => i.kind === "file")) {
+    dragDepth++; document.body.classList.add("dragging");
+  }
+});
+document.addEventListener("dragleave", () => {
+  if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dragging"); }
+});
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => {
+  e.preventDefault();
+  dragDepth = 0; document.body.classList.remove("dragging");
+  const file = [...e.dataTransfer.files].find(f => f.type.startsWith("image/"));
+  if (file) reverseSearch(file);
+});
+document.addEventListener("paste", e => {
+  const file = [...(e.clipboardData?.files ?? [])].find(f => f.type.startsWith("image/"));
+  if (file) reverseSearch(file);
+});
+document.addEventListener("keydown", e => {
+  // "/" ショートカットは他の入力欄への通常入力 (日付 2025/08 等) を奪わないようにする
+  const inField = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
+  if (e.key === "/" && !inField) { e.preventDefault(); $("q").focus(); }
+  // IME変換の取り消しEscでパネルまで閉じないようにする
+  if (e.key === "Escape" && !e.isComposing) closePanel();
+});
+$("gridwrap").addEventListener("scroll", e => {
+  const el = e.target;
+  if (!done && !reverseMode &&
+      el.scrollHeight - el.scrollTop - el.clientHeight < 600) runSearch(false);
+});
+$("tagInput").addEventListener("keydown", async e => {
+  if (e.isComposing || e.keyCode === 229) return;  // IME変換確定のEnterでタグ登録しない
+  if (e.key === "Enter" && e.target.value.trim() && selectedId) {
+    await api(`/photos/${selectedId}/tags`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name: e.target.value.trim()}),
+    });
+    e.target.value = "";
+    select(selectedId);
+  }
+});
+$("tagInput").addEventListener("input", async e => {
+  if (!e.target.value) return;
+  const list = await api("/tags?q=" + encodeURIComponent(e.target.value));
+  $("tagList").innerHTML = list.map(t => `<option value="${esc(t.name)}">`).join("");
+});
+
+// --- 書き出しダイアログ ---
+// 切り出しは画像全体を表示したキャンバス上に枠を描画し、ドラッグで移動/拡縮するGUI操作。
+// exp.box は画像に対する正規化座標 (0-1) の {x, y, w, h}。
+const exp = { photo: null, img: null, aspect: null, box: null, drag: null };
+const CROP_MIN = 0.03;  // 枠の最小サイズ（正規化）
+const CROP_HANDLES = [
+  {id:"nw", fx:0,   fy:0,   cursor:"nwse-resize"},
+  {id:"n",  fx:0.5, fy:0,   cursor:"ns-resize"},
+  {id:"ne", fx:1,   fy:0,   cursor:"nesw-resize"},
+  {id:"e",  fx:1,   fy:0.5, cursor:"ew-resize"},
+  {id:"se", fx:1,   fy:1,   cursor:"nwse-resize"},
+  {id:"s",  fx:0.5, fy:1,   cursor:"ns-resize"},
+  {id:"sw", fx:0,   fy:1,   cursor:"nesw-resize"},
+  {id:"w",  fx:0,   fy:0.5, cursor:"ew-resize"},
+];
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// --- 書き出し設定の記憶 (crop枠は写真ごとに違うため対象外。それ以外は次回に引き継ぐ) ---
+const EXPORT_PREFS_KEY = "pf_export_prefs_v1";
+const EXPORT_DEFAULTS = {
+  wm: "", wmPos: "bottom-right", wmFont: "gothic", wmOp: 0.6,
+  gps: true, format: "png", edge: "", quality: 95,
+};
+function loadExportPrefs() {
+  try { return { ...EXPORT_DEFAULTS, ...JSON.parse(localStorage.getItem(EXPORT_PREFS_KEY)) }; }
+  catch { return { ...EXPORT_DEFAULTS }; }
+}
+function saveExportPrefs() {
+  localStorage.setItem(EXPORT_PREFS_KEY, JSON.stringify({
+    wm: $("expWm").value, wmPos: exp.wmPos, wmFont: $("expWmFont").value,
+    wmOp: +$("expWmOp").value, gps: $("expGps").checked,
+    format: $("expFormat").value, edge: $("expEdge").value, quality: +$("expQ").value,
+  }));
+}
+
+// --- 透かし位置 3x3 グリッド (中央は写真本体と重なるため選択不可) ---
+const WM_POSITIONS = [
+  {id:"top-left"}, {id:"top"}, {id:"top-right"},
+  {id:"left"}, null, {id:"right"},
+  {id:"bottom-left"}, {id:"bottom"}, {id:"bottom-right"},
+];
+const WM_POS_LABEL = {
+  "top-left":"左上", "top":"上", "top-right":"右上", "left":"左", "right":"右",
+  "bottom-left":"左下", "bottom":"下", "bottom-right":"右下",
+};
+function renderWmPosGrid() {
+  const box = $("expWmPosGrid");
+  box.innerHTML = "";
+  for (const p of WM_POSITIONS) {
+    if (!p) { const s = document.createElement("span"); s.className = "wmpos-center"; box.appendChild(s); continue; }
+    const b = document.createElement("button");
+    b.className = "wmpos-btn" + (p.id === exp.wmPos ? " active" : "");
+    b.title = WM_POS_LABEL[p.id];
+    b.type = "button";
+    b.onclick = () => {
+      exp.wmPos = p.id;
+      [...box.children].forEach(c => c.classList?.remove("active"));
+      b.classList.add("active");
+      drawExport(); saveExportPrefs();
+    };
+    box.appendChild(b);
+  }
+}
+
+let wmFontsLoaded = null;
+async function ensureWmFontOptions() {
+  if (wmFontsLoaded) return wmFontsLoaded;
+  wmFontsLoaded = await api("/export/options");
+  const sel = $("expWmFont");
+  sel.innerHTML = wmFontsLoaded.fonts.map(f => `<option value="${esc(f.id)}">${esc(f.label)}</option>`).join("");
+  return wmFontsLoaded;
+}
+// canvas プレビュー用の CSS フォント対応表 (バックエンドの export.FONTS と同じ id を使う)
+const WM_FONT_CSS = {
+  "gothic":      { family: '"Meiryo", sans-serif', weight: "" },
+  "gothic-bold": { family: '"Meiryo", sans-serif', weight: "bold" },
+  "yugothic":    { family: '"Yu Gothic", sans-serif', weight: "" },
+  "mincho":      { family: '"Yu Mincho", serif', weight: "" },
+  "mono":        { family: '"Cascadia Mono", monospace', weight: "" },
+  "serif-en":    { family: 'Georgia, serif', weight: "" },
+};
+
+async function openExport(photo) {
+  exp.photo = photo;
+  exp.aspect = null;
+  exp.box = { x: 0, y: 0, w: 1, h: 1 };
+  exp.drag = null;
+  [...$("expAspects").children].forEach(b => b.classList.toggle("ghost", b.dataset.a !== ""));
+  $("expName").textContent = basename(photo.path);
+  $("expResult").textContent = "";
+
+  await ensureWmFontOptions();
+  const prefs = loadExportPrefs();
+  $("expWm").value = prefs.wm;
+  exp.wmPos = prefs.wmPos;
+  renderWmPosGrid();
+  $("expWmFont").value = prefs.wmFont;
+  $("expWmOp").value = prefs.wmOp; $("expWmOpVal").textContent = Math.round(prefs.wmOp * 100) + "%";
+  $("expGps").checked = prefs.gps;
+  $("expFormat").value = prefs.format;
+  $("expEdge").value = prefs.edge;
+  $("expQ").value = prefs.quality;
+  updateExpFormatUI();
+  exp.img = new Image();
+  exp.img.onload = drawExport;
+  exp.img.src = `/api/photos/${photo.id}/preview?h=${photo.xxhash}`;
+  $("expDlg").showModal();
+}
+
+// 画像をキャンバス内にレターボックス表示する矩形（ピクセル座標）
+function expImageRect() {
+  const c = $("expCanvas");
+  const iw = exp.img.naturalWidth, ih = exp.img.naturalHeight;
+  const scale = Math.min(c.width / iw, c.height / ih);
+  const dw = iw * scale, dh = ih * scale;
+  return { dx: (c.width - dw) / 2, dy: (c.height - dh) / 2, dw, dh };
+}
+
+function expBoxPx(box) {
+  const r = expImageRect();
+  return { x: r.dx + box.x * r.dw, y: r.dy + box.y * r.dh, w: box.w * r.dw, h: box.h * r.dh };
+}
+
+function expPointToNorm(px, py) {
+  const r = expImageRect();
+  return { x: clamp((px - r.dx) / r.dw, 0, 1), y: clamp((py - r.dy) / r.dh, 0, 1) };
+}
+
+function expActiveHandles() {
+  // 縦横比を固定しているときは辺ハンドルだと比率が崩れるため四隅のみにする
+  return exp.aspect ? CROP_HANDLES.filter(h => h.fx !== 0.5 && h.fy !== 0.5) : CROP_HANDLES;
+}
+
+function drawExport() {
+  if (!exp.img?.complete || !exp.box) return;
+  const c = $("expCanvas"), ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+  const r = expImageRect();
+  ctx.drawImage(exp.img, r.dx, r.dy, r.dw, r.dh);
+
+  const box = expBoxPx(exp.box);
+  ctx.fillStyle = "rgba(10,16,20,.55)";
+  ctx.fillRect(0, 0, c.width, box.y);
+  ctx.fillRect(0, box.y + box.h, c.width, c.height - box.y - box.h);
+  ctx.fillRect(0, box.y, box.x, box.h);
+  ctx.fillRect(box.x + box.w, box.y, c.width - box.x - box.w, box.h);
+
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
+  ctx.strokeRect(box.x + 0.75, box.y + 0.75, Math.max(0, box.w - 1.5), Math.max(0, box.h - 1.5));
+  ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = 1;
+  for (const f of [1/3, 2/3]) {
+    ctx.beginPath(); ctx.moveTo(box.x + box.w*f, box.y); ctx.lineTo(box.x + box.w*f, box.y + box.h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(box.x, box.y + box.h*f); ctx.lineTo(box.x + box.w, box.y + box.h*f); ctx.stroke();
+  }
+  ctx.fillStyle = "#fff";
+  for (const h of expActiveHandles()) {
+    const hx = box.x + h.fx * box.w, hy = box.y + h.fy * box.h;
+    ctx.fillRect(hx - 4, hy - 4, 8, 8);
+  }
+
+  // 切り出しサイズ (px) — 枠の外側 (上→ダメなら下) に表示し、写真/透かしと重ねない。
+  // 外側に置く余地が無いときだけ枠内側に回すが、その際は透かし位置と反対側の角を選ぶ。
+  const iw = exp.img.naturalWidth, ih = exp.img.naturalHeight;
+  const pxW = Math.round(exp.box.w * iw), pxH = Math.round(exp.box.h * ih);
+  const dimLabel = `${pxW} × ${pxH}px`;
+  ctx.font = "11px ui-monospace, Consolas, monospace";
+  const dtw = ctx.measureText(dimLabel).width;
+  const padX = 6, labelH = 17;
+  let lx = box.x, ly;
+  if (box.y - labelH - 4 >= 0) {
+    ly = box.y - labelH - 4;                              // 枠の外側・上
+  } else if (box.y + box.h + labelH + 4 <= c.height) {
+    ly = box.y + box.h + 4;                                // 枠の外側・下
+  } else {
+    const wmTop = (exp.wmPos || "bottom-right").includes("top");
+    ly = wmTop ? box.y + box.h - labelH - 4 : box.y + 4;   // 枠内側・透かしと反対の角
+  }
+  ctx.fillStyle = "rgba(10,16,20,.72)";
+  ctx.fillRect(lx, ly, dtw + padX * 2, labelH);
+  ctx.fillStyle = "#fff";
+  ctx.textBaseline = "middle";
+  ctx.fillText(dimLabel, lx + padX, ly + labelH / 2 + 1);
+  ctx.textBaseline = "alphabetic";
+
+  const text = $("expWm").value.trim();
+  if (text && box.w > 10 && box.h > 10) {
+    const fs = Math.max(11, box.h / 14);
+    const fdef = WM_FONT_CSS[$("expWmFont").value] || WM_FONT_CSS.gothic;
+    ctx.font = `${fdef.weight} ${fs}px ${fdef.family}`.trim();
+    ctx.globalAlpha = +$("expWmOp").value;
+    const m = 8, tw = ctx.measureText(text).width;
+    const pos = exp.wmPos || "bottom-right";
+    const tx = pos.includes("left") ? box.x + m
+             : pos.includes("right") ? box.x + box.w - tw - m
+             : box.x + (box.w - tw) / 2;
+    const ty = pos.includes("top") ? box.y + fs + m
+             : pos.includes("bottom") ? box.y + box.h - m
+             : box.y + box.h / 2 + fs / 2.6;
+    ctx.fillStyle = "#000"; ctx.fillText(text, tx + 1, ty + 1);
+    ctx.fillStyle = "#fff"; ctx.fillText(text, tx, ty);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function expHitTest(px, py) {
+  const box = expBoxPx(exp.box);
+  for (const h of expActiveHandles()) {
+    const hx = box.x + h.fx * box.w, hy = box.y + h.fy * box.h;
+    if (Math.abs(px - hx) <= 8 && Math.abs(py - hy) <= 8) return h;
+  }
+  if (px >= box.x && px <= box.x + box.w && py >= box.y && py <= box.y + box.h) return {id: "move"};
+  return null;
+}
+
+function expApplyAspect() {
+  if (!exp.aspect) { drawExport(); return; }
+  const iw = exp.img.naturalWidth, ih = exp.img.naturalHeight;
+  const cx = exp.box.x + exp.box.w / 2, cy = exp.box.y + exp.box.h / 2;
+  let w = exp.box.w, h = (w * iw / exp.aspect) / ih;
+  if (h > 1) { h = 1; w = (h * ih * exp.aspect) / iw; }
+  exp.box = { x: clamp(cx - w/2, 0, 1-w), y: clamp(cy - h/2, 0, 1-h), w, h };
+  drawExport();
+}
+
+function expCanvasXY(e) {
+  const c = $("expCanvas"), rect = c.getBoundingClientRect();
+  return {
+    px: (e.clientX - rect.left) * (c.width / rect.width),
+    py: (e.clientY - rect.top) * (c.height / rect.height),
+  };
+}
+
+$("expCanvas").addEventListener("pointerdown", e => {
+  const { px, py } = expCanvasXY(e);
+  const hit = expHitTest(px, py);
+  const n = expPointToNorm(px, py);
+  if (hit && hit.id === "move") {
+    exp.drag = { mode: "move", startX: n.x, startY: n.y, box0: {...exp.box} };
+  } else if (hit) {
+    exp.drag = { mode: "resize", handle: hit, box0: {...exp.box} };
+  } else {
+    exp.box = { x: n.x, y: n.y, w: 0, h: 0 };
+    exp.drag = { mode: "new", anchor: {x: n.x, y: n.y} };
+  }
+  e.target.setPointerCapture(e.pointerId);
+  drawExport();
+});
+
+$("expCanvas").addEventListener("pointermove", e => {
+  const { px, py } = expCanvasXY(e);
+  if (!exp.drag) {
+    const hit = expHitTest(px, py);
+    e.target.style.cursor = hit ? (hit.id === "move" ? "move" : hit.cursor) : "crosshair";
+    return;
+  }
+  const n = expPointToNorm(px, py);
+  const iw = exp.img.naturalWidth, ih = exp.img.naturalHeight;
+
+  if (exp.drag.mode === "move") {
+    const b0 = exp.drag.box0;
+    exp.box = {
+      x: clamp(b0.x + (n.x - exp.drag.startX), 0, 1 - b0.w),
+      y: clamp(b0.y + (n.y - exp.drag.startY), 0, 1 - b0.h),
+      w: b0.w, h: b0.h,
+    };
+  } else if (exp.drag.mode === "new") {
+    const a = exp.drag.anchor;
+    let x0 = Math.min(a.x, n.x), x1 = Math.max(a.x, n.x);
+    let y0 = Math.min(a.y, n.y), y1 = Math.max(a.y, n.y);
+    let w = x1 - x0, h = y1 - y0;
+    if (exp.aspect) {
+      h = clamp((w * iw / exp.aspect) / ih, 0, 1);
+      if (n.y >= a.y) { y0 = a.y; y1 = y0 + h; } else { y1 = a.y; y0 = y1 - h; }
+    }
+    exp.box = { x: x0, y: clamp(y0, 0, 1), w, h };
+  } else if (exp.drag.mode === "resize") {
+    const h = exp.drag.handle, b0 = exp.drag.box0;
+    let x0 = b0.x, y0 = b0.y, x1 = b0.x + b0.w, y1 = b0.y + b0.h;
+    if (h.fx === 0) x0 = clamp(n.x, 0, x1 - CROP_MIN);
+    if (h.fx === 1) x1 = clamp(n.x, x0 + CROP_MIN, 1);
+    if (h.fy === 0) y0 = clamp(n.y, 0, y1 - CROP_MIN);
+    if (h.fy === 1) y1 = clamp(n.y, y0 + CROP_MIN, 1);
+    let nw = x1 - x0, nh = y1 - y0;
+    if (exp.aspect && h.fx !== 0.5 && h.fy !== 0.5) {
+      nh = (nw * iw / exp.aspect) / ih;
+      if (h.fy === 0) y0 = y1 - nh; else y1 = y0 + nh;
+      if (y0 < 0) { y0 = 0; nh = y1 - y0; nw = (nh * ih * exp.aspect) / iw; if (h.fx === 0) x0 = x1 - nw; else x1 = x0 + nw; }
+      if (y1 > 1) { y1 = 1; nh = y1 - y0; nw = (nh * ih * exp.aspect) / iw; if (h.fx === 0) x0 = x1 - nw; else x1 = x0 + nw; }
+    }
+    exp.box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+  drawExport();
+});
+
+$("expCanvas").addEventListener("pointerup", () => {
+  if (exp.drag?.mode === "new" && (exp.box.w < CROP_MIN || exp.box.h < CROP_MIN)) {
+    exp.box = { x: 0, y: 0, w: 1, h: 1 };  // 極小ドラッグ（誤クリック）は無視
+    drawExport();
+  }
+  exp.drag = null;
+});
+
+$("expAspects").addEventListener("click", e => {
+  const b = e.target.closest("[data-a]");
+  if (!b) return;
+  exp.aspect = b.dataset.a ? +b.dataset.a : null;
+  [...$("expAspects").children].forEach(x => x.classList.toggle("ghost", x !== b));
+  expApplyAspect();
+});
+
+function updateExpFormatUI() {
+  const isJpeg = $("expFormat").value === "jpeg";
+  $("expQLabel").style.display = isJpeg ? "" : "none";
+  $("expQ").style.display = isJpeg ? "" : "none";
+}
+$("expFormat").addEventListener("change", () => { updateExpFormatUI(); saveExportPrefs(); });
+
+$("expWm").addEventListener("input", () => { drawExport(); saveExportPrefs(); });
+$("expWmFont").addEventListener("change", () => { drawExport(); saveExportPrefs(); });
+for (const id of ["expGps", "expEdge", "expQ"]) $(id).addEventListener("change", saveExportPrefs);
+$("expWmOp").addEventListener("input", () => {
+  $("expWmOpVal").textContent = Math.round(+$("expWmOp").value * 100) + "%";
+  drawExport(); saveExportPrefs();
+});
+
+$("expGo").onclick = async () => {
+  const box = exp.box;
+  const isFull = box.w > 0.999 && box.h > 0.999;
+  const body = {
+    crop: isFull ? null : box,
+    watermark: $("expWm").value.trim()
+      ? { text: $("expWm").value.trim(), position: exp.wmPos,
+          font: $("expWmFont").value, opacity: +$("expWmOp").value }
+      : null,
+    strip_metadata: $("expGps").checked,
+    format: $("expFormat").value,
+    quality: +$("expQ").value,
+    max_edge: $("expEdge").value ? +$("expEdge").value : null,
+  };
+  saveExportPrefs();
+  $("expResult").textContent = "書き出し中…";
+  try {
+    const r = await api(`/photos/${exp.photo.id}/export`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    $("expResult").innerHTML = "";
+    $("expResult").append("完了: " + r.out_path + " ");
+    if (!IN_DOCKER) {
+      const btn = document.createElement("button");
+      btn.className = "ghost"; btn.style.cssText = "font-size:10.5px;padding:2px 8px";
+      btn.textContent = "フォルダを開く";
+      btn.onclick = () => api("/reveal", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({path: r.out_path}),
+      });
+      $("expResult").append(btn);
+    }
+  } catch (err) {
+    $("expResult").textContent = "エラー: " + err.message;
+  }
+};
+
+// --- roots / scan ---
+function openRootDlg() {
+  $("rootPath").value = "";
+  $("rootRecursive").checked = true;
+  $("rootDlg").showModal();
+  $("rootPath").focus();
+}
+$("addRoot").onclick = openRootDlg;
+$("setAddRoot").onclick = openRootDlg;
+$("rootAddBtn").onclick = async () => {
+  try {
+    await api("/roots", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        path: $("rootPath").value, ext_filter: $("rootExt").value,
+        recursive: $("rootRecursive").checked,
+      }),
+    });
+    $("rootDlg").close();
+    if ($("setDlg").open) refreshRoots();  // 設定画面から開いた場合は一覧を更新
+  } catch (err) { alert(err.message); }
+};
+$("scanBtn").onclick = () => api("/index/scan", {method:"POST",
+  headers:{"Content-Type":"application/json"}, body:"{}"});
+
+// --- 設定 ---
+async function refreshRoots() {
+  const roots = await api("/roots");
+  const box = $("setRoots");
+  box.innerHTML = "";
+  if (!roots.length) {
+    box.innerHTML = '<span style="color:var(--ink2); font-size:12px">フォルダが登録されていません</span>';
+    return;
+  }
+  for (const r of roots) {
+    const row = document.createElement("div");
+    row.className = "root-row";
+    const scope = r.recursive ? "サブフォルダ含む" : "直下のみ";
+    row.innerHTML = `
+      <span class="path">${esc(r.path)}</span>
+      <small>${r.photo_count.toLocaleString()}枚 · ${esc(r.ext_filter)} · ${scope}</small>
+      <button class="ghost" style="font-size:11px; padding:2px 10px; flex:none" data-rescan>再スキャン</button>
+      <button class="ghost" style="font-size:11px; padding:2px 10px; flex:none" data-del>除外</button>`;
+    row.querySelector("[data-rescan]").onclick = async () => {
+      const res = await api("/index/scan", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({root_id: r.id})});
+      const btn = row.querySelector("[data-rescan]");
+      btn.textContent = res.started ? "開始しました" : "スキャン実行中";
+      setTimeout(() => { btn.textContent = "再スキャン"; }, 2500);
+    };
+    row.querySelector("[data-del]").onclick = async () => {
+      if (!confirm(`このフォルダをインデックスから除外しますか?\n${r.path}\n（写真ファイル自体は削除されません）`)) return;
+      await api(`/roots/${r.id}`, {method: "DELETE"});
+      await refreshRoots();
+      runSearch();
+    };
+    box.appendChild(row);
+  }
+}
+
+async function refreshBackupStatus() {
+  const b = await api("/backup/status");
+  $("setBackupAuto").checked = b.enabled;
+  $("setBackupStatus").textContent = b.snapshots.length
+    ? `最終: ${b.snapshots[0].taken_at.replace("T", " ").slice(0, 16)} · ` +
+      `${(b.snapshots[0].size / 1048576).toFixed(1)} MB · ${b.snapshots.length}世代`
+    : "スナップショットはまだありません";
+}
+
+async function refreshVecStatus() {
+  const s = await api("/index/status");
+  const extra = s.vectors - s.indexed_total;
+  $("setVecStatus").textContent =
+    `ベクトル ${s.vectors.toLocaleString()}本 / 写真 ${s.indexed_total.toLocaleString()}枚` +
+    (extra > 0 ? `（重複 ${extra.toLocaleString()}本）` : "（重複なし）");
+}
+
+$("settingsBtn").onclick = async () => {
+  const s = await api("/settings");
+  $("setScanStartup").checked = !!s.scan_on_startup;
+  $("setDlg").showModal();
+  refreshRoots();
+  refreshBackupStatus();
+  refreshVecStatus();
+  refreshPoiSection();
+  pollArchiveImport();  // バックグラウンド実行中/完了済みの取り込み結果を再表示する
+  api("/index/status").then(st => renderAccelStatus(st.providers)).catch(() => {});
+};
+$("setBackupAuto").addEventListener("change", e => {
+  api("/settings", {
+    method: "PATCH", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({backup_auto: e.target.checked}),
+  });
+});
+$("setBackupNow").onclick = async () => {
+  $("setBackupNow").disabled = true;
+  $("setBackupNow").textContent = "作成中…";
+  try {
+    await api("/backup/snapshot", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({rebuild: $("setBackupRebuild").checked}),
+    });
+    await refreshBackupStatus();
+    if ($("setBackupRebuild").checked) await refreshVecStatus();
+    $("setBackupNow").textContent = "作成しました";
+  } catch (err) {
+    $("setBackupNow").textContent = "エラー: " + err.message;
+  } finally {
+    setTimeout(() => {
+      $("setBackupNow").textContent = "今すぐ作成";
+      $("setBackupNow").disabled = false;
+    }, 3000);
+  }
+};
+$("setDatasetExport").onclick = async () => {
+  $("setDatasetExport").disabled = true;
+  $("setDatasetExport").textContent = "書き出し中…";
+  try {
+    const res = await fetch("/api/export/dataset", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        include_negatives: $("setDatasetNegatives").checked,
+        include_bird_detail: $("setDatasetBirdDetail").checked,
+      }),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new Error(b?.detail || "HTTP " + res.status);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const a = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    a.href = url; a.download = m ? m[1] : "dataset.zip"; a.click();
+    URL.revokeObjectURL(url);
+    $("setDatasetExport").textContent = "書き出しました";
+  } catch (err) {
+    $("setDatasetExport").textContent = "エラー: " + err.message;
+  } finally {
+    setTimeout(() => {
+      $("setDatasetExport").textContent = "人手タグ付け済み写真を書き出す";
+      $("setDatasetExport").disabled = false;
+    }, 3000);
+  }
+};
+$("setVecRebuild").onclick = async () => {
+  $("setVecRebuild").disabled = true;
+  $("setVecRebuild").textContent = "再構築中…";
+  try {
+    const r = await api("/index/rebuild-vectors", {method: "POST"});
+    await refreshVecStatus();
+    $("setVecRebuild").textContent = `完了: ${r.removed}本を整理`;
+  } catch (err) {
+    $("setVecRebuild").textContent = "エラー: " + err.message;
+  } finally {
+    setTimeout(() => {
+      $("setVecRebuild").textContent = "ベクトル索引を再構築";
+      $("setVecRebuild").disabled = false;
+    }, 3000);
+  }
+};
+
+// --- Xアーカイブ取り込み ---
+let archivePollTimer = null;
+
+function updateArchiveSelectedCount() {
+  const total = document.querySelectorAll("#archiveCandidates input[type=checkbox]").length;
+  const checked = document.querySelectorAll("#archiveCandidates input:checked").length;
+  $("archiveSelectedCount").textContent = total ? `${checked} / ${total} 件選択中` : "";
+}
+
+function renderArchiveCandidates(candidates) {
+  const box = $("archiveCandidates");
+  box.innerHTML = "";
+  $("archiveConfirmBtns").hidden = !candidates.length;
+  $("archiveThresholdRow").hidden = !candidates.length;
+  for (const c of candidates) {
+    const row = document.createElement("label");
+    row.className = "cand-row";
+    row.innerHTML = `
+      <input type="checkbox" checked data-photo="${c.photo_id}" data-tweet="${esc(c.tweet_id)}" data-score="${c.score}" style="flex:none">
+      <img src="${esc(c.thumb_url || "")}" loading="lazy" alt="">
+      <span style="flex:1">
+        類似度 ${c.score.toFixed(2)} ·
+        <a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">投稿を見る</a>
+        ${c.text ? `<br><span class="cand-text">${esc(c.text.slice(0, 60))}</span>` : ""}
+      </span>`;
+    box.appendChild(row);
+  }
+  updateArchiveSelectedCount();
+}
+
+$("archiveCandidates").addEventListener("change", e => {
+  if (e.target.matches("input[type=checkbox]")) updateArchiveSelectedCount();
+});
+
+$("archiveThresholdBtn").onclick = () => {
+  const threshold = parseFloat($("archiveThreshold").value);
+  if (Number.isNaN(threshold)) { alert("類似度を数値で入力してください"); return; }
+  document.querySelectorAll("#archiveCandidates input[type=checkbox]").forEach(cb => {
+    cb.checked = parseFloat(cb.dataset.score) >= threshold;
+  });
+  updateArchiveSelectedCount();
+};
+
+async function pollArchiveImport() {
+  clearTimeout(archivePollTimer);
+  const s = await api("/archive/import-status");
+  if (s.phase === "parsing" || s.phase === "matching") {
+    $("archiveImportStatus").textContent =
+      `${s.phase === "parsing" ? "解析中…" : "照合中…"} (${s.done}/${s.total})`;
+    archivePollTimer = setTimeout(pollArchiveImport, 1500);
+  } else if (s.phase === "done") {
+    const skips = [];
+    if (s.skipped_existing) skips.push(`既にリンク済み ${s.skipped_existing}件`);
+    if (s.skipped_out_of_range) skips.push(`対象期間外 ${s.skipped_out_of_range}件`);
+    $("archiveImportStatus").textContent =
+      `完了: 候補 ${s.candidates.length}件` + (skips.length ? `（${skips.join("・")}はスキップ）` : "");
+    renderArchiveCandidates(s.candidates);
+  } else if (s.phase === "error") {
+    $("archiveImportStatus").textContent = "エラー: " + s.error;
+  }
+}
+
+const archiveImportBtns = ["archiveImportAllBtn", "archiveImportRangeBtn", "archiveSuggestBtn"];
+
+async function startArchiveImport(dateFrom, dateTo) {
+  const file = $("archiveFileInput").files[0];
+  if (!file) { alert("zipファイルを選択してください"); return; }
+  const form = new FormData();
+  form.append("file", file);
+  if (dateFrom) form.append("date_from", dateFrom);
+  if (dateTo) form.append("date_to", dateTo);
+  archiveImportBtns.forEach(id => $(id).disabled = true);
+  $("archiveImportStatus").textContent = "アップロード中…";
+  try {
+    const res = await fetch("/api/archive/import", {method: "POST", body: form});
+    const d = await res.json();
+    if (!d.started) {
+      $("archiveImportStatus").textContent = "開始できませんでした: " + (d.reason || "");
+      return;
+    }
+    pollArchiveImport();
+  } finally {
+    archiveImportBtns.forEach(id => $(id).disabled = false);
+  }
+}
+
+$("archiveImportAllBtn").onclick = () => startArchiveImport(null, null);
+
+$("archiveImportRangeBtn").onclick = () =>
+  startArchiveImport($("archiveDateFrom").value || null, $("archiveDateTo").value || null);
+
+$("archiveSuggestBtn").onclick = async () => {
+  const d = await api("/archive/suggested-date-from");
+  if (!d.date_from) {
+    alert("まだリンク済みの投稿がないため、目安の日付を計算できません");
+    return;
+  }
+  $("archiveDateFrom").value = d.date_from;
+  $("archiveDateTo").value = "";
+  startArchiveImport(d.date_from, null);
+};
+
+$("archiveConfirmBtn").onclick = async () => {
+  const accepted = [...document.querySelectorAll("#archiveCandidates input:checked")]
+    .map(cb => ({photo_id: +cb.dataset.photo, tweet_id: cb.dataset.tweet}));
+  const res = await api("/archive/import/confirm", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({accepted}),
+  });
+  $("archiveImportStatus").textContent = `${res.written}件をリンクしました`;
+  $("archiveCandidates").innerHTML = "";
+  $("archiveConfirmBtns").hidden = true;
+  $("archiveThresholdRow").hidden = true;
+};
+
+$("archiveDismissBtn").onclick = async () => {
+  await api("/archive/import/dismiss", {method: "POST"});
+  $("archiveCandidates").innerHTML = "";
+  $("archiveConfirmBtns").hidden = true;
+  $("archiveThresholdRow").hidden = true;
+  $("archiveImportStatus").textContent = "破棄しました";
+};
+$("setPoiApply").onclick = async () => {
+  $("setPoiApply").disabled = true;
+  $("setPoiApply").textContent = "適用中…";
+  try {
+    const r = await api("/geo/refresh-poi", {method: "POST"});
+    $("setPoiApply").textContent = `完了: ${r.updated}枚に適用`;
+  } catch (err) {
+    $("setPoiApply").textContent = "エラー: " + err.message;
+  } finally {
+    setTimeout(() => {
+      $("setPoiApply").textContent = "POIを写真に再適用";
+      $("setPoiApply").disabled = false;
+    }, 4000);
+  }
+};
+
+// --- 場所データ (OSM POI): 都道府県ごとの取得/削除 + カスタム地点 -----------
+
+let poiPrefsCache = null;
+
+async function refreshPoiSection() {
+  const status = await api("/geo/poi-status");
+  const prefRows = status.prefs.filter(p => p.pref !== "manual");
+
+  // 都道府県一覧
+  const box = $("setPoiList");
+  box.innerHTML = "";
+  if (!prefRows.length) {
+    box.innerHTML = '<span style="color:var(--ink2); font-size:12px">場所データが未取得です（下から都道府県を選んで取得してください）</span>';
+  } else {
+    for (const p of prefRows) {
+      const row = document.createElement("div");
+      row.className = "root-row";
+      row.innerHTML = `
+        <span class="path" style="font-family:inherit">${esc(p.pref)}</span>
+        <small>${p.count.toLocaleString()}件 · ${esc(p.fetched_at.slice(0, 10))}</small>
+        <button class="ghost" style="font-size:11px; padding:2px 10px; flex:none" data-del-pref>削除</button>`;
+      row.querySelector("[data-del-pref]").onclick = async () => {
+        if (!confirm(`${p.pref}の場所データを削除しますか？`)) return;
+        await api(`/geo/poi/prefecture/${encodeURIComponent(p.pref)}`, {method: "DELETE"});
+        await refreshPoiSection();
+      };
+      box.appendChild(row);
+    }
+  }
+
+  // 取得フォーム: 未取得の県のみ選択肢に出す
+  if (!poiPrefsCache) poiPrefsCache = await api("/geo/prefectures");
+  const fetchedSet = new Set(prefRows.map(p => p.pref));
+  const sel = $("poiPrefSelect");
+  sel.innerHTML = poiPrefsCache
+    .filter(p => !fetchedSet.has(p))
+    .map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
+
+  // カスタム地点一覧 (常時全件表示)
+  const customs = await api("/geo/poi/custom");
+  const cbox = $("poiCustomList");
+  cbox.innerHTML = "";
+  if (!customs.length) {
+    cbox.innerHTML = '<span style="color:var(--ink2); font-size:12px">カスタム地点はまだありません</span>';
+  } else {
+    for (const m of customs) {
+      const row = document.createElement("div");
+      row.className = "root-row";
+      row.innerHTML = `
+        <span class="path" style="font-family:inherit">${esc(m.name)}</span>
+        <small>${m.lat.toFixed(4)}, ${m.lon.toFixed(4)}</small>
+        <button class="ghost" style="font-size:11px; padding:2px 10px; flex:none" data-del-poi>削除</button>`;
+      row.querySelector("[data-del-poi]").onclick = async () => {
+        await api(`/geo/poi/${m.id}`, {method: "DELETE"});
+        await refreshPoiSection();
+      };
+      cbox.appendChild(row);
+    }
+  }
+}
+
+$("poiFetchBtn").onclick = async () => {
+  const pref = $("poiPrefSelect").value;
+  if (!pref) return;
+  $("poiFetchBtn").disabled = true;
+  $("poiFetchStatus").textContent = `${pref}を取得中…（数十秒〜数分かかります）`;
+  try {
+    await api("/geo/poi/fetch", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({pref}),
+    });
+    // バックグラウンド取得の完了をポーリング
+    while (true) {
+      await new Promise(r => setTimeout(r, 2000));
+      const s = await api("/geo/poi/fetch-status");
+      if (!s.running) {
+        if (s.error) { $("poiFetchStatus").textContent = "エラー: " + s.error; }
+        else {
+          $("poiFetchStatus").textContent = `${pref}の取得完了`;
+          await refreshPoiSection();
+          await api("/geo/refresh-poi", {method: "POST"});  // 反映まで自動で行う
+        }
+        break;
+      }
+    }
+  } catch (err) {
+    $("poiFetchStatus").textContent = "エラー: " + err.message;
+  } finally {
+    $("poiFetchBtn").disabled = false;
+    setTimeout(() => { $("poiFetchStatus").textContent = ""; }, 6000);
+  }
+};
+
+$("poiCustomAdd").onclick = async () => {
+  const name = $("poiCustomName").value.trim();
+  const lat = parseFloat($("poiCustomLat").value);
+  const lon = parseFloat($("poiCustomLon").value);
+  if (!name || Number.isNaN(lat) || Number.isNaN(lon)) {
+    alert("地点名と緯度経度（数値）を入力してください");
+    return;
+  }
+  await api("/geo/poi", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({name, lat, lon}),
+  });
+  $("poiCustomName").value = ""; $("poiCustomLat").value = ""; $("poiCustomLon").value = "";
+  await refreshPoiSection();
+  await api("/geo/refresh-poi", {method: "POST"});
+};
+$("setScanStartup").addEventListener("change", e => {
+  api("/settings", {
+    method: "PATCH", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({scan_on_startup: e.target.checked}),
+  });
+});
+$("setShutdown").addEventListener("click", async () => {
+  if (!confirm("PhotoFinderを終了しますか？")) return;
+  $("setShutdown").disabled = true;
+  $("setShutdown").textContent = "終了中…";
+  // レスポンス到達前にプロセスが終了することもあるため、失敗しても
+  // 終了自体は成功しているものとして扱う (console=Falseでは他に確認手段が無い)
+  await api("/shutdown", {method: "POST"}).catch(() => {});
+  document.body.innerHTML =
+    '<p style="padding:40px; font-size:14px; text-align:center; color:var(--ink)">' +
+    'PhotoFinder を終了しました。このタブは閉じて構いません。</p>';
+});
+
+// --- 並び順トグル ---
+$("orderBtn").onclick = () => {
+  sortOrder = sortOrder === "desc" ? "asc" : "desc";
+  $("orderBtn").textContent = sortOrder === "desc" ? "新しい順 ↓" : "古い順 ↑";
+  runSearch();
+};
+
+// --- X投稿状況フィルタ (全て → 投稿済み → 未投稿 → 全て) ---
+$("postedBtn").onclick = () => {
+  postedFilter = postedFilter === null ? true : postedFilter === true ? false : null;
+  $("postedBtn").textContent = "投稿状況: " +
+    (postedFilter === null ? "全て" : postedFilter ? "投稿済み" : "未投稿");
+  runSearch();
+};
+
+// --- スキャン停止/再開 ---
+$("cancelBtn").onclick = async () => {
+  $("cancelBtn").disabled = true;
+  try { await api("/index/cancel", {method: "POST"}); } catch {}
+  $("cancelBtn").disabled = false;
+};
+
+function fmtEta(sec) {
+  if (sec == null) return "";
+  sec = Math.round(sec);
+  if (sec < 60) return `残り約${sec}秒`;
+  const m = Math.round(sec / 60);
+  if (m < 60) return `残り約${m}分`;
+  return `残り約${Math.floor(m / 60)}時間${m % 60}分`;
+}
+
+// --- status polling (2秒間隔) ---
+let lastIndexedTotal = null;
+let IN_DOCKER = false;  // コンテナ実行時はreveal系UIを隠す (main.py IN_DOCKER 参照)
+setInterval(async () => {
+  try {
+    const s = await api("/index/status");
+    if (IN_DOCKER !== !!s.in_docker) {
+      IN_DOCKER = !!s.in_docker;
+      $("pOpen").hidden = IN_DOCKER;
+    }
+    $("statusDot").className = "dot" + (s.running ? " busy" : "");
+    $("cancelBtn").hidden = !s.running || s.cancel_requested;
+    $("scanBtn").hidden = s.running;
+
+    if (s.running && s.phase === "extract" && s.total > 0) {
+      $("scanProgress").hidden = false;
+      const pct = Math.round(s.done_total / s.total * 100);
+      $("scanBar").querySelector("i").style.width = pct + "%";
+      const rate = s.rate_per_min ? ` · ${s.rate_per_min}枚/分` : "";
+      $("scanEta").textContent = `${s.done_total}/${s.total} (${pct}%)${rate} ${fmtEta(s.eta_seconds)}`;
+    } else {
+      $("scanProgress").hidden = true;
+    }
+
+    $("statusText").textContent = s.running
+      ? (s.cancel_requested ? "停止中…"
+         : s.phase === "scan" ? `フォルダを走査中 — ${basename(s.current_root)}`
+         : s.phase === "flush" ? "索引を保存中…"
+         : `インデックス作成中`)
+      : (s.cancelled ? `停止しました · インデックス済 ${s.indexed_total} 枚（再開するには「今すぐスキャン」）`
+         : `待機中 · インデックス済 ${s.indexed_total} 枚`);
+
+    // インデックス済み枚数が変わったら（検索条件なし表示中のみ）グリッドを自動更新
+    if (!s.running && lastIndexedTotal !== null && !reverseMode &&
+        s.indexed_total !== lastIndexedTotal && !$("q").value) runSearch();
+    // スキャンが完了した瞬間（running: true→false）に場所データの不足をチェック
+    if (!s.running && lastIndexedTotal !== null && s.indexed_total !== lastIndexedTotal) {
+      checkMissingPrefectures();
+    }
+    if (!s.running) lastIndexedTotal = s.indexed_total;
+
+    if ($("setDlg").open) renderAccelStatus(s.providers);
+  } catch {}
+}, 2000);
+
+const PROVIDER_LABEL = {
+  CUDAExecutionProvider: "GPU (CUDA)",
+  CPUExecutionProvider: "CPU",
+};
+
+function renderAccelStatus(providers) {
+  if (!providers) return;
+  const line = (label, p) =>
+    `${label}: ${p ? (PROVIDER_LABEL[p] || p) : "未使用"}`;
+  $("setAccelStatus").innerHTML = [
+    line("画像/テキスト検索 (SigLIP2・テキスト)", providers.siglip_text),
+    line("画像/テキスト検索 (SigLIP2・画像)", providers.siglip_vision),
+    line("物体検出 (YOLOv8x)", providers.yolo),
+  ].join("<br>");
+}
+
+// --- 場所データが無い地域の提案バナー ---
+async function checkMissingPrefectures() {
+  let missing;
+  try { missing = await api("/geo/missing-prefectures"); } catch { return; }
+  if (!missing.length) { $("geoBanner").hidden = true; return; }
+  const key = "geoBannerDismissed:" + missing.map(m => m.prefecture).sort().join(",");
+  if (sessionStorage.getItem(key)) return;
+
+  const top = missing[0];
+  const restCount = missing.length - 1;
+  $("geoBannerText").textContent =
+    `「${top.prefecture}」で撮影された写真が${top.photo_count}枚ありますが、場所データがありません。` +
+    (restCount > 0 ? `（他${restCount}地域）` : "");
+  $("geoBanner").hidden = false;
+  $("geoBannerFetch").onclick = async () => {
+    $("geoBannerFetch").disabled = true;
+    $("geoBannerFetch").textContent = "取得中…";
+    try {
+      await api("/geo/poi/fetch", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({pref: top.prefecture}),
+      });
+      while (true) {
+        await new Promise(r => setTimeout(r, 2000));
+        const fs = await api("/geo/poi/fetch-status");
+        if (!fs.running) break;
+      }
+      await api("/geo/refresh-poi", {method: "POST"});
+      $("geoBanner").hidden = true;
+      checkMissingPrefectures();  // 残りの未取得地域があれば続けて表示
+    } catch (err) {
+      $("geoBannerFetch").textContent = "エラー: " + err.message;
+      return;
+    } finally {
+      $("geoBannerFetch").disabled = false;
+      $("geoBannerFetch").textContent = "今すぐ取得";
+    }
+  };
+  $("geoBannerClose").onclick = () => {
+    sessionStorage.setItem(key, "1");
+    $("geoBanner").hidden = true;
+  };
+}
+
+runSearch();
+checkMissingPrefectures();
+</script>
+</body>
+</html>

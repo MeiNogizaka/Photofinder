@@ -1,0 +1,19 @@
+# 実行時生成データ(DB・サムネ・FAISS)— バックアップは別途 data/ ごとコピー
+data/
+
+# MLモデル(tools/download_models.py で再取得可能)
+models/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 動作確認用の生成画像(tools/make_sample_photos.py で再生成可能)
+sample-photos/
+
+# 実写真の運用テストデータ(ユーザの実データ・大容量。絶対にコミットしない)
+sample-photos-real/
+
+# docker-compose.yml が参照する環境変数 (PHOTO_LIBRARY_PATH 等、環境固有)
+.env

@@ -1,0 +1,17 @@
+# Docker CUDAイメージ / Linux開発機でCUDA実行プロバイダを使うための追加インストール。
+# requirements.txt の無印 onnxruntime と同居できないため、まず無印を抜いてから
+# 以下を入れる (同一venv/イメージ内、Dockerfileのcudaステージも同じ手順を踏む):
+#   pip install -r requirements.txt
+#   pip uninstall onnxruntime -y
+#   pip install -r requirements-gpu.txt
+#
+# 動作確認済み組み合わせ (RTX 3060, CUDA 13.3 ドライバ, 2026-07-19):
+#   onnxruntime-gpu 1.27.0 (CUDA13対応の安定版) + nvidia-cudnn-cu13 (pipホイール, cuDNN 9.24)
+#   photofinder/ml.py の _add_pip_cuda_lib_paths() が nvidia-cudnn-cu13 の .so を
+#   ctypes で事前ロードするため、手動での環境変数設定は不要
+#   (LD_LIBRARY_PATH の書き換えはプロセス起動後には効かないため採用していない)。
+#
+# CPUイメージ (requirements.txtのみ) とCUDAイメージ (これを追加) は
+# Dockerfileのビルド引数 VARIANT=cpu|cuda で作り分ける。
+onnxruntime-gpu
+nvidia-cudnn-cu13

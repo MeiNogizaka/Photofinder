@@ -1,0 +1,27 @@
+# 走査 + EXIF + サムネ + 検索UI
+fastapi
+uvicorn[standard]
+python-multipart
+pillow
+pillow-heif
+piexif
+exifread
+rawpy
+xxhash
+
+# SigLIP 埋め込み + FAISS(モデルは models/ に配置。tools/download_models.py 参照)
+faiss-cpu
+# onnxruntime: CPUイメージ用。CUDAイメージは requirements-gpu.txt の
+# onnxruntime-gpu を使う (Dockerfile が VARIANT でどちらかを選択、CLAUDE.md参照)
+onnxruntime
+numpy
+tokenizers
+huggingface_hub
+
+# 日本語全文検索
+sudachipy
+sudachidict-core
+
+# OCR + オフライン逆ジオコーディング
+rapidocr-onnxruntime
+reverse_geocoder

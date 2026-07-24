@@ -1,0 +1,77 @@
+# 使い方 (詳細は docs/docker.md):
+#   1. モデル取得 (初回のみ):
+#        docker compose --profile setup run --rm model-fetch
+#   2. 起動 (CPU環境):
+#        docker compose --profile cpu up -d
+#      起動 (NVIDIA GPU環境、要 nvidia-container-toolkit):
+#        docker compose --profile cuda up -d
+#
+# PHOTO_LIBRARY_PATH は .env ファイルか環境変数で指定 (例: PHOTO_LIBRARY_PATH=/home/you/Pictures)。
+# UIの「フォルダを追加」にはコンテナ内パス /photos/... を登録すること (ホスト側パスではない)。
+
+services:
+  photofinder-cpu:
+    build:
+      context: .
+      target: runtime
+      args:
+        VARIANT: cpu
+    image: photofinder2:cpu
+    profiles: ["cpu"]
+    # ポートマッピングが公開範囲そのもの (アプリ側に認証機構は無い)。
+    # 127.0.0.1 のままなら、このDockerホスト以外からは一切アクセスできない。
+    # LAN/インターネットに公開したい場合のみ、左側を 0.0.0.0 (または省略) に
+    # 変更すること — その場合の安全確保は利用者の責任 (README/docs/docker.md参照)
+    ports:
+      - "127.0.0.1:8686:8686"
+    environment:
+      PHOTOFINDER_DATA: /app/data
+      PHOTOFINDER_HOST: 0.0.0.0   # コンテナ内で全interface待受 (実際の公開範囲は上のports:が決める)
+      PHOTOFINDER_PORT: "8686"
+    volumes:
+      - photofinder2_data:/app/data
+      - photofinder2_models:/app/models
+      - ${PHOTO_LIBRARY_PATH:?Set PHOTO_LIBRARY_PATH (e.g. in a .env file) to your photo library path}:/photos:ro
+    restart: unless-stopped
+
+  photofinder-cuda:
+    build:
+      context: .
+      target: runtime
+      args:
+        VARIANT: cuda
+    image: photofinder2:cuda
+    profiles: ["cuda"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]
+    ports:
+      - "127.0.0.1:8686:8686"
+    environment:
+      PHOTOFINDER_DATA: /app/data
+      PHOTOFINDER_HOST: 0.0.0.0
+      PHOTOFINDER_PORT: "8686"
+    volumes:
+      - photofinder2_data:/app/data
+      - photofinder2_models:/app/models
+      - ${PHOTO_LIBRARY_PATH:?Set PHOTO_LIBRARY_PATH (e.g. in a .env file) to your photo library path}:/photos:ro
+    restart: unless-stopped
+
+  # 初回セットアップ用。モデル取得はアプリイメージのビルド/起動ライフサイクル
+  # から独立させてある (Dockerfileのmodel-fetchステージ参照)。実行後は
+  # コンテナ自体は破棄してよい (--rm)、成果物はmodelsボリューム側に残る
+  model-fetch:
+    build:
+      context: .
+      target: model-fetch
+    profiles: ["setup"]
+    volumes:
+      - photofinder2_models:/app/models
+
+volumes:
+  photofinder2_data:
+  photofinder2_models:

@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.pyc
+data/
+models/
+sample-photos/
+sample-photos-real/
+samples/
+docs/screenshots
+.claude
+*.md
+.env
