@@ -211,12 +211,25 @@ not the original — well above SigLIP/YOLO's input resolution, and consistent w
 GPS/EXIF-stripping export philosophy.
 
 **`IN_DOCKER` (`main.py`, from `PHOTOFINDER_DOCKER` env var, set by the Dockerfile) gates the
-reveal/"open in file manager" endpoints.** A container has no desktop to open a file manager on, so
-`POST /api/reveal` and `POST /photos/{id}/open-in-explorer` return 501 when `IN_DOCKER` is true, and
-the frontend hides the corresponding buttons based on `GET /api/index/status`'s `in_docker` field.
-The Windows-specific `_reveal_windows()` Win32 shell API implementation from app2/photofinder was
-deleted outright (not just gated) — Windows isn't a target platform here even for local dev, so it
-was dead code from day one in this repo.
+"open in file manager" endpoint.** A container has no desktop to open a file manager on, so
+`POST /photos/{id}/open-in-explorer` returns 501 when `IN_DOCKER` is true, and the frontend hides
+the corresponding button based on `GET /api/index/status`'s `in_docker` field. The Windows-specific
+`_reveal_windows()` Win32 shell API implementation from app2/photofinder was deleted outright (not
+just gated) — Windows isn't a target platform here even for local dev, so it was dead code from day
+one in this repo.
+
+**Exports never persist inside the container — both `POST /photos/{id}/export` and
+`POST /api/export/dataset` stream straight back to the browser.** This replaced an earlier design
+(app2/photofinder-era) that wrote into `data/exports/` and returned a container-local path, plus a
+now-deleted `POST /api/reveal` endpoint to open that folder — useless the moment distribution moved
+to Docker-only, since a container has nothing to reveal a folder *in*. `export.export_photo()` now
+returns `(bytes, filename)` built entirely in memory (no `out_dir` param, no on-disk collision-avoidance
+loop) and `main.py`'s `export()` wraps that in a `Response` with `Content-Disposition: attachment`.
+The dataset zip (`export_dataset()`) is unavoidably file-backed (`zipfile.ZipFile` needs a path, and
+builds can run to thousands of photos) but uses `tempfile.mkstemp()` — outside the `data/` named
+volume entirely — and deletes it via a `BackgroundTask` attached to the `FileResponse`, after the
+response finishes streaming. Follow this pattern (in-memory bytes, or a temp file + `BackgroundTask`
+cleanup) for any future export-like endpoint — never write a new one into `data/exports/`.
 
 **Docker packaging** (`Dockerfile` + `docker-compose.yml`, see [docs/docker.md](docs/docker.md) for
 the full rationale and troubleshooting): one `Dockerfile`, `ARG VARIANT=cpu|cuda` selects the base
