@@ -1502,22 +1502,23 @@ $("expGo").onclick = async () => {
   saveExportPrefs();
   $("expResult").textContent = "書き出し中…";
   try {
-    const r = await api(`/photos/${exp.photo.id}/export`, {
+    const res = await fetch(`/api/photos/${exp.photo.id}/export`, {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body),
     });
-    $("expResult").innerHTML = "";
-    $("expResult").append("完了: " + r.out_path + " ");
-    if (!IN_DOCKER) {
-      const btn = document.createElement("button");
-      btn.className = "ghost"; btn.style.cssText = "font-size:10.5px;padding:2px 8px";
-      btn.textContent = "フォルダを開く";
-      btn.onclick = () => api("/reveal", {
-        method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({path: r.out_path}),
-      });
-      $("expResult").append(btn);
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new Error(b?.detail || "HTTP " + res.status);
     }
+    const blob = await res.blob();
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const a = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    a.href = url; a.download = m ? m[1] : "export";
+    a.click();
+    URL.revokeObjectURL(url);
+    $("expResult").textContent = "ダウンロードしました";
   } catch (err) {
     $("expResult").textContent = "エラー: " + err.message;
   }

@@ -66,14 +66,13 @@ def _load_font(size: int, font_key: str | None = None) -> ImageFont.FreeTypeFont
 
 def export_photo(
     src: Path,
-    out_dir: Path,
     crop: dict | None = None,          # {x, y, w, h} 0-1 正規化
     watermark: dict | None = None,     # {text, position, opacity}
     strip_metadata: bool = True,       # True = EXIF 全除去 (GPS・シリアル等を確実に落とす)
     fmt: str = "jpeg",
     quality: int = 92,
     max_edge: int | None = 2048,
-) -> Path:
+) -> tuple[bytes, str]:
     # with で開き、画素データを読み切ってから閉じる (開いたままだと大量書き出し時に
     # FD を消費し続ける。scanner.py の extract_one と同じ理由)。RAWはscanner.pyと
     # 同じく埋め込みプレビュー経由 (フル現像はしない) — 埋め込みJPEGなら自身の
@@ -110,22 +109,18 @@ def export_photo(
     if not strip_metadata and exif_bytes:
         save_exif = exif_bytes
 
-    out_dir.mkdir(parents=True, exist_ok=True)
     stem = re.sub(r"[^\w\-]", "_", src.stem)
     ext = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}[fmt]
-    out = out_dir / f"{stem}_edit{ext}"
-    n = 1
-    while out.exists():
-        out = out_dir / f"{stem}_edit_{n}{ext}"
-        n += 1
+    filename = f"{stem}_edit{ext}"
 
     kwargs: dict = {}
     if fmt in ("jpeg", "webp"):
         kwargs["quality"] = quality
     if save_exif:
         kwargs["exif"] = save_exif
-    img.save(out, fmt.upper(), **kwargs)
-    return out
+    buf = io.BytesIO()
+    img.save(buf, fmt.upper(), **kwargs)
+    return buf.getvalue(), filename
 
 
 def _load_watermark_image(data_url: str) -> Image.Image:

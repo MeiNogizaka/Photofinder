@@ -47,7 +47,6 @@
 | POST | `/geo/poi` | カスタム地点を手動追加 `{name, lat, lon}`（近傍検索に自動反映） |
 | DELETE | `/geo/poi/{id}` | 個別 POI（カスタム/取得済み問わず）を削除 |
 | GET | `/export/options` | 書き出しダイアログのフォント選択肢一覧（`export.FONTS` が定義元） |
-| POST | `/reveal` | 書き出しファイルをエクスプローラで表示（exports 配下のみ。Dockerコンテナ実行時は501） |
 | POST | `/export/dataset` | 人手タグ付け済み写真をJSONL+画像zipで書き出す（教師/評価データセット化。`{include_negatives?, include_bird_detail?}`、既定どちらもtrue） |
 | GET | `/backup/status` | バックアップ状況（自動有効/無効・スナップショット一覧） |
 | POST | `/backup/snapshot` | DB スナップショット即時作成（`{rebuild:true}` でベクトル索引も再構築） |
@@ -219,8 +218,7 @@
   "watermark": { "text": "© mikan", "position": "bottom-right",
                  "font": "gothic", "opacity": 0.6, "size_pct": 2.5 },   // 省略可（テキスト透かし）
   "strip_metadata": true,   // true = EXIF 全除去 (GPS・機材シリアル含む)。旧名 strip_gps も受理
-  "format": "png", "quality": 95, "max_edge": null,          // 既定: PNG・原寸。JPEG時のみ quality 使用
-  "out_dir": "sns"          // 省略可。data/exports/ 配下のサブフォルダ名としてのみ解釈 (外は 403)
+  "format": "png", "quality": 95, "max_edge": null          // 既定: PNG・原寸。JPEG時のみ quality 使用
 }
 ```
 
@@ -240,7 +238,8 @@
 PNG/WebP等を`FileReader`でdata URL化したもの（デコード後8MB・4000万px超は500エラーで拒否）。
 画像自体のアルファに`opacity`をさらに掛け合わせて合成する。
 
-→ `{ "out_path": "/app/data/exports/DSC01234_edit.png" }`。**原本は変更しない。**
+→ 画像バイナリを `Content-Disposition: attachment` 付きで直接返す（`image/jpeg`|`image/png`|`image/webp`）。
+コンテナ内には保存せず、ブラウザへそのままダウンロードさせる。**原本は変更しない。**
 
 ## POST /export/dataset
 

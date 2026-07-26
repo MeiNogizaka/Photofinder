@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -20,8 +21,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
 from . import fts, ml, scanner
 from . import __version__
@@ -454,7 +456,12 @@ def export_options():
 
 @app.post("/api/photos/{photo_id}/export")
 def export(photo_id: int, body: dict = Body(default={})):
-    """切り出し + 透かし + GPS除去で書き出し。原本は変更しない。"""
+    """切り出し + 透かし + GPS除去で書き出し、ブラウザへ直接ダウンロード返却する。
+
+    原本は変更しない。書き出し結果はコンテナ内に保存せず、レスポンスとして
+    その場で返すのみ (以前は data/exports/ 配下に永続化していたが、Docker配布
+    ではダウンロード後にコンテナ内へファイルを残しておく理由が無いため撤廃)。
+    """
     from .export import export_photo
     p = _photo_or_404(photo_id)
     src = Path(p["root_path"]) / p["path"]
@@ -463,20 +470,9 @@ def export(photo_id: int, body: dict = Body(default={})):
     fmt = body.get("format", "jpeg")
     if fmt not in ("jpeg", "png", "webp"):
         raise HTTPException(422, "format must be jpeg|png|webp")
-    # 書き出し先は exports 配下に限定 (任意パスへの書き込みを防ぐ)。
-    # out_dir はサブフォルダ名としてのみ解釈する
-    exports_root = (DATA_DIR / "exports").resolve()
-    out_dir = exports_root
-    if body.get("out_dir"):
-        candidate = (exports_root / str(body["out_dir"])).resolve()
-        try:
-            candidate.relative_to(exports_root)
-        except ValueError:
-            raise HTTPException(403, "out_dir must be inside the exports folder")
-        out_dir = candidate
     try:
-        out = export_photo(
-            src, out_dir,
+        data, filename = export_photo(
+            src,
             crop=body.get("crop"),
             watermark=body.get("watermark"),
             strip_metadata=body.get(
@@ -487,25 +483,11 @@ def export(photo_id: int, body: dict = Body(default={})):
         )
     except Exception as ex:
         raise HTTPException(500, f"export failed: {ex}")
-    return {"out_path": str(out)}
-
-
-@app.post("/api/reveal")
-def reveal(body: dict = Body(...)):
-    """書き出したファイルをエクスプローラで表示。exports 配下のみ許可。"""
-    if IN_DOCKER:
-        raise HTTPException(501, "reveal is unavailable when running in Docker")
-    path = Path(body.get("path", ""))
-    allowed = (DATA_DIR / "exports").resolve()
-    try:
-        resolved = path.resolve()
-        resolved.relative_to(allowed)
-    except (ValueError, OSError):
-        raise HTTPException(403, "path not allowed")
-    if not resolved.exists():
-        raise HTTPException(404, "file not found")
-    _reveal_in_file_manager(resolved)
-    return {"ok": True}
+    media_type = {"jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}[fmt]
+    return Response(
+        content=data, media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ================================================================== tags ====
@@ -1024,12 +1006,15 @@ def export_dataset(body: dict = Body(default={})):
     photo_tags.verified!=0 (人手確定/否認済み) のタグを持つ写真のみが対象
     (dataset_export.py 参照)。数百〜数千枚規模を想定し、既存の単体写真書き出し
     と同じ直接応答パターンで同期即時ダウンロードとして返す。
+
+    zipはOSの一時ディレクトリ (data/ ボリュームの外) に作り、レスポンス送信完了後に
+    BackgroundTaskで削除する — コンテナ内にダウンロード後のデータを残さないため。
     """
     from .dataset_export import build_dataset_zip
-    exports_root = (DATA_DIR / "exports").resolve()
-    exports_root.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    out_path = exports_root / f"dataset-{ts}.zip"
+    fd, tmp_name = tempfile.mkstemp(prefix=f"dataset-{ts}-", suffix=".zip")
+    os.close(fd)
+    out_path = Path(tmp_name)
     try:
         summary = build_dataset_zip(
             db, DATA_DIR, out_path,
@@ -1042,7 +1027,10 @@ def export_dataset(body: dict = Body(default={})):
     if summary["photos"] == 0:
         out_path.unlink(missing_ok=True)
         raise HTTPException(404, "no verified (confirmed/rejected) tags to export")
-    return FileResponse(out_path, media_type="application/zip", filename=out_path.name)
+    return FileResponse(
+        out_path, media_type="application/zip", filename=f"dataset-{ts}.zip",
+        background=BackgroundTask(out_path.unlink, missing_ok=True),
+    )
 
 
 # ================================================================== geo =====
