@@ -486,6 +486,14 @@
           <button id="expAspCustomBtn" class="ghost" style="font-size:11px;padding:3px 8px">適用</button>
         </span>
       </div>
+      <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center">
+        <span style="font-size:11px; color:var(--ink2)">ピクセル指定</span>
+        <input id="expPxW" type="number" min="1" placeholder="幅px" style="width:64px; margin:0; padding:3px 4px; font-size:11px">
+        <span style="font-size:11px; color:var(--ink2)">×</span>
+        <input id="expPxH" type="number" min="1" placeholder="高さpx" style="width:64px; margin:0; padding:3px 4px; font-size:11px">
+        <button id="expPxApplyBtn" class="ghost" style="font-size:11px;padding:3px 8px">適用</button>
+        <button id="expBoxResetBtn" class="ghost" style="font-size:11px;padding:3px 8px;margin-left:auto">範囲をリセット</button>
+      </div>
     </div>
     <div style="width:220px; font-size:12px">
       <p class="lbl" style="margin-top:0">透かし</p>
@@ -1036,18 +1044,28 @@ const CROP_HANDLES = [
 ];
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-// --- 書き出し設定の記憶 (crop枠は写真ごとに違うため対象外。それ以外は次回に引き継ぐ) ---
+// --- 書き出し設定の記憶 ---
+// crop枠 (exp.box) は正規化座標 (0-1) のため、写真ごとに解像度が違っても数値上は
+// 常に0-1に収まってしまい「範囲外」判定ができない。そのため原寸pxでの位置・幅高さ
+// (boxPx、保存時の写真の原寸origW/origHも一緒に) を記憶し、次回開いたときにその
+// 時の写真の原寸 (photo.width/height) と突き合わせる (openExport参照)。
+// 解像度が完全一致する写真 (同じ写真の開き直し等) なら位置も含めて復元し、
+// 一致しないが枠サイズ自体は収まるなら中央寄せで復元、収まらなければ全体表示にリセットする
 const EXPORT_PREFS_KEY = "pf_export_prefs_v1";
 const EXPORT_DEFAULTS = {
   wm: "", wmPos: "bottom-right", wmFont: "gothic", wmOp: 0.6, wmSize: 2.5,
   wmMode: "text", wmImgSize: 20,
   gps: true, format: "png", edge: "", quality: 95,
+  boxPx: null,  // {x, y, w, h, origW, origH} 原寸px。nullなら全体 (未指定/前回リセット済み)
 };
 function loadExportPrefs() {
   try { return { ...EXPORT_DEFAULTS, ...JSON.parse(localStorage.getItem(EXPORT_PREFS_KEY)) }; }
   catch { return { ...EXPORT_DEFAULTS }; }
 }
 function saveExportPrefs() {
+  const origW = exp.photo?.width || exp.img?.naturalWidth || 0;
+  const origH = exp.photo?.height || exp.img?.naturalHeight || 0;
+  const isFull = exp.box && exp.box.w > 0.999 && exp.box.h > 0.999;
   localStorage.setItem(EXPORT_PREFS_KEY, JSON.stringify({
     wm: $("expWm").value, wmPos: exp.wmPos, wmFont: $("expWmFont").value,
     wmOp: +$("expWmOp").value, wmSize: +$("expWmSize").value,
@@ -1056,6 +1074,11 @@ function saveExportPrefs() {
     wmMode: exp.wmMode, wmImgSize: +$("expWmImgSize").value,
     gps: $("expGps").checked,
     format: $("expFormat").value, edge: $("expEdge").value, quality: +$("expQ").value,
+    boxPx: (exp.box && origW && origH && !isFull)
+      ? { x: Math.round(exp.box.x * origW), y: Math.round(exp.box.y * origH),
+          w: Math.round(exp.box.w * origW), h: Math.round(exp.box.h * origH),
+          origW, origH }
+      : null,
   }));
 }
 
@@ -1123,11 +1146,30 @@ async function openExport(photo) {
   $("expWmImgName").textContent = "";
   [...$("expAspects").children].forEach(b => b.classList.toggle("ghost", b.dataset.a !== ""));
   $("expAspW").value = ""; $("expAspH").value = "";
+  $("expPxW").value = ""; $("expPxH").value = "";
   $("expName").textContent = basename(photo.path);
   $("expResult").textContent = "";
 
   await ensureWmFontOptions();
   const prefs = loadExportPrefs();
+  // 前回の書き出し範囲 (原寸px) を、今回開いた写真の原寸と突き合わせて復元する。
+  // 解像度が完全一致 (同じ写真を開き直した等) なら位置も含めてそのまま復元、
+  // 一致しないがサイズ自体は収まるなら中央寄せで復元、収まらなければ全体表示のまま
+  const origW = photo.width || 0, origH = photo.height || 0;
+  const bp = prefs.boxPx;
+  if (bp && origW && origH) {
+    if (bp.origW === origW && bp.origH === origH) {
+      const w = bp.w / origW, h = bp.h / origH, x = bp.x / origW, y = bp.y / origH;
+      if (w > 0 && h > 0 && x >= 0 && y >= 0 && x + w <= 1 && y + h <= 1) {
+        exp.box = { x, y, w, h };
+      }
+    } else {
+      const w = bp.w / origW, h = bp.h / origH;
+      if (w > 0 && h > 0 && w <= 1 && h <= 1) {
+        exp.box = { x: (1 - w) / 2, y: (1 - h) / 2, w, h };
+      }
+    }
+  }
   $("expWm").value = prefs.wm;
   exp.wmPos = prefs.wmPos;
   renderWmPosGrid();
@@ -1325,6 +1367,22 @@ function expApplyAspect() {
   drawExport();
 }
 
+// アスペクト比 (見た目の縦横比) ではなく、書き出しの実ピクセルサイズを直接指定する。
+// 原寸 (exp.photo.width/height、プレビューの縮小上限ではない) を基準に正規化し、
+// 現在の枠の中心に当てはめる。写真の原寸を超える指定は全体に収まる範囲へ丸める
+function expApplyPixelSize(pxW, pxH) {
+  if (!(pxW > 0) || !(pxH > 0)) return;
+  const origW = exp.photo.width || exp.img.naturalWidth;
+  const origH = exp.photo.height || exp.img.naturalHeight;
+  const w = clamp(pxW / origW, 0, 1), h = clamp(pxH / origH, 0, 1);
+  const cx = exp.box.x + exp.box.w / 2, cy = exp.box.y + exp.box.h / 2;
+  exp.box = { x: clamp(cx - w/2, 0, 1-w), y: clamp(cy - h/2, 0, 1-h), w, h };
+  exp.aspect = pxW / pxH;
+  [...$("expAspects").querySelectorAll("button[data-a]")].forEach(x => x.classList.add("ghost"));
+  drawExport();
+  saveExportPrefs();
+}
+
 function expCanvasXY(e) {
   const c = $("expCanvas"), rect = c.getBoundingClientRect();
   return {
@@ -1400,6 +1458,7 @@ $("expCanvas").addEventListener("pointerup", () => {
     exp.box = { x: 0, y: 0, w: 1, h: 1 };  // 極小ドラッグ（誤クリック）は無視
     drawExport();
   }
+  if (exp.drag) saveExportPrefs();  // ドラッグで範囲を変えたときだけ記憶する
   exp.drag = null;
 });
 
@@ -1409,6 +1468,7 @@ $("expAspects").addEventListener("click", e => {
   exp.aspect = b.dataset.a ? +b.dataset.a : null;
   [...$("expAspects").children].forEach(x => x.classList.toggle("ghost", x !== b));
   expApplyAspect();
+  saveExportPrefs();
 });
 
 $("expAspCustomBtn").addEventListener("click", () => {
@@ -1418,6 +1478,21 @@ $("expAspCustomBtn").addEventListener("click", () => {
   // プリセットボタンはどれも一致しないのですべて非選択にする
   [...$("expAspects").querySelectorAll("button[data-a]")].forEach(x => x.classList.add("ghost"));
   expApplyAspect();
+  saveExportPrefs();
+});
+
+$("expPxApplyBtn").addEventListener("click", () => {
+  expApplyPixelSize(+$("expPxW").value, +$("expPxH").value);
+});
+
+$("expBoxResetBtn").addEventListener("click", () => {
+  exp.box = { x: 0, y: 0, w: 1, h: 1 };
+  exp.aspect = null;
+  $("expAspW").value = ""; $("expAspH").value = "";
+  $("expPxW").value = ""; $("expPxH").value = "";
+  [...$("expAspects").children].forEach(b => b.classList.toggle("ghost", b.dataset.a !== ""));
+  drawExport();
+  saveExportPrefs();
 });
 
 function updateExpFormatUI() {
