@@ -146,6 +146,22 @@ def _migrate(db: sqlite3.Connection) -> None:
         # schema.sql 側で常に実行されるため ALTER 不要。バージョン番号だけ揃える
         db.execute("UPDATE schema_meta SET value='5' WHERE key='schema_version'")
         db.commit()
+        version = 5
+    if version and version < 6:
+        # v5 → v6: photo_posts.platform/platform_label (投稿先SNS種別)、
+        # photos.exported_at (書き出し済みマーク用)
+        cols = [r["name"] for r in db.execute("PRAGMA table_info(photo_posts)")]
+        if "platform" not in cols:
+            db.execute(
+                "ALTER TABLE photo_posts ADD COLUMN platform TEXT NOT NULL DEFAULT 'x' "
+                "CHECK (platform IN ('x','instagram','other'))")
+        if "platform_label" not in cols:
+            db.execute("ALTER TABLE photo_posts ADD COLUMN platform_label TEXT")
+        pcols = [r["name"] for r in db.execute("PRAGMA table_info(photos)")]
+        if "exported_at" not in pcols:
+            db.execute("ALTER TABLE photos ADD COLUMN exported_at TEXT")
+        db.execute("UPDATE schema_meta SET value='6' WHERE key='schema_version'")
+        db.commit()
 
 
 def _has(db: sqlite3.Connection, table: str) -> bool:

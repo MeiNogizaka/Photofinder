@@ -161,10 +161,12 @@ def _hydrate(ids: list[int]) -> list[dict]:
         return []
     rows = db.execute(
         f"""SELECT p.id, p.path, p.taken_at, p.width, p.height, p.ext, p.xxhash,
+                   p.exported_at,
                    (SELECT group_concat(t.name, ',') FROM (
                        SELECT t.name FROM photo_tags pt JOIN tags t ON t.id=pt.tag_id
                        WHERE pt.photo_id=p.id AND pt.verified>=0
-                       ORDER BY pt.conf DESC LIMIT 3) t) AS top_tags
+                       ORDER BY pt.conf DESC LIMIT 3) t) AS top_tags,
+                   (SELECT 1 FROM photo_posts pp WHERE pp.photo_id=p.id LIMIT 1) AS has_post
             FROM photos p WHERE p.id IN ({','.join('?' * len(ids))})""",
         ids,
     ).fetchall()
@@ -183,6 +185,8 @@ def _hydrate(ids: list[int]) -> list[dict]:
             "filename": Path(by_id[i]["path"]).name,
             "top_tags": (by_id[i]["top_tags"] or "").split(",")
                         if by_id[i]["top_tags"] else [],
+            "posted": bool(by_id[i]["has_post"]),
+            "exported": by_id[i]["exported_at"] is not None,
         }
         for i in ids if i in by_id
     ]
@@ -354,7 +358,8 @@ def photo_detail(photo_id: int):
         (photo_id,),
     ).fetchall()
     post_rows = db.execute(
-        """SELECT id, url, posted_at, caption_snippet, source, note, created_at
+        """SELECT id, url, posted_at, caption_snippet, source, platform, platform_label,
+                  note, created_at
            FROM photo_posts WHERE photo_id=? ORDER BY created_at DESC""",
         (photo_id,),
     ).fetchall()
@@ -483,6 +488,9 @@ def export(photo_id: int, body: dict = Body(default={})):
         )
     except Exception as ex:
         raise HTTPException(500, f"export failed: {ex}")
+    with _db_write:
+        db.execute("UPDATE photos SET exported_at=datetime('now') WHERE id=?", (photo_id,))
+        db.commit()
     media_type = {"jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}[fmt]
     return Response(
         content=data, media_type=media_type,
@@ -615,18 +623,28 @@ def add_post(photo_id: int, body: dict = Body(...)):
     url = (body.get("url") or "").strip()
     if not url.startswith(("http://", "https://")):
         raise HTTPException(422, "url must be an absolute http(s) URL")
+    platform = body.get("platform") or "x"
+    if platform not in ("x", "instagram", "other"):
+        raise HTTPException(422, "platform must be x, instagram, or other")
+    platform_label = (body.get("platform_label") or "").strip() or None
+    if platform != "other":
+        platform_label = None
     posted_at = (body.get("posted_at") or "").strip() or None
     note = (body.get("note") or "").strip() or None
-    meta = _fetch_oembed(url)  # ベストエフォート。失敗しても登録は続行する
+    # oEmbed は X のみ対応。他プラットフォームで呼んでも失敗するだけなので無駄な待ちを避ける
+    meta = _fetch_oembed(url) if platform == "x" else {}
     with _db_write:
         cur = db.execute(
-            "INSERT INTO photo_posts (photo_id, url, posted_at, caption_snippet, source, note) "
-            "VALUES (?,?,?,?,'manual',?)",
-            (photo_id, url, posted_at, meta.get("caption_snippet"), note))
+            "INSERT INTO photo_posts "
+            "(photo_id, url, posted_at, caption_snippet, source, platform, platform_label, note) "
+            "VALUES (?,?,?,?,'manual',?,?,?)",
+            (photo_id, url, posted_at, meta.get("caption_snippet"),
+             platform, platform_label, note))
         fts.update_fts(db, photo_id)
         db.commit()
     row = db.execute(
-        "SELECT id, url, posted_at, caption_snippet, source, note, created_at "
+        "SELECT id, url, posted_at, caption_snippet, source, platform, platform_label, "
+        "note, created_at "
         "FROM photo_posts WHERE id=?", (cur.lastrowid,)).fetchone()
     return {"post": dict(row), "duplicate_warnings": _similar_posted_photos(photo_id)}
 

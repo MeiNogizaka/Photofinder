@@ -181,15 +181,18 @@ works identically inside the `nvidia/cuda` Docker base image — the root cause 
 path issue, not an OS-level cuDNN absence, so the container's CUDA runtime being present doesn't make
 this preload step unnecessary.
 
-**X (Twitter) post links reuse the embedding index, not a new matcher.**
-`photo_posts` (schema.sql) stores manual links between a local photo and a tweet URL. Because
-X-posted images are often crops/rewatermarks of the local original, duplicate-post warnings
-(`GET /photos/{id}/posts/similar`, `main.py`) match on SigLIP cosine similarity via
-`VectorStore.get_vector()` + `.search()` rather than xxhash/pHash exact matching, which doesn't
-survive a crop. `SIMILAR_POST_MIN_SCORE` (0.75) is an untuned starting heuristic. Adding a tweet URL
-triggers a best-effort network call to X's public oEmbed endpoint for a caption snippet — the one
-exception to "no cloud services by default" in this codebase, and it degrades silently (empty
-snippet) rather than failing the request.
+**SNS post links reuse the embedding index, not a new matcher.**
+`photo_posts` (schema.sql) stores manual links between a local photo and a post URL, tagged with
+`platform` (`x`/`instagram`/`other`, schema v6+; `source` is a separate manual/archive-import axis,
+not the platform). Because posted images are often crops/rewatermarks of the local original,
+duplicate-post warnings (`GET /photos/{id}/posts/similar`, `main.py`) match on SigLIP cosine
+similarity via `VectorStore.get_vector()` + `.search()` rather than xxhash/pHash exact matching,
+which doesn't survive a crop — this check is platform-agnostic (any linked post counts, regardless
+of `platform`). `SIMILAR_POST_MIN_SCORE` (0.75) is an untuned starting heuristic. Adding a post URL
+with `platform=="x"` (the default) triggers a best-effort network call to X's public oEmbed endpoint
+for a caption snippet — the one exception to "no cloud services by default" in this codebase, and it
+degrades silently (empty snippet) rather than failing the request; non-X platforms skip this call
+entirely rather than let it fail against a URL it was never meant to resolve.
 
 **Content-addressed cache URLs.** `/api/photos/{id}/thumb` and `/preview` are served with a long
 `Cache-Control: immutable` header, but since a `photo_id` can legitimately end up pointing at
@@ -229,7 +232,11 @@ The dataset zip (`export_dataset()`) is unavoidably file-backed (`zipfile.ZipFil
 builds can run to thousands of photos) but uses `tempfile.mkstemp()` — outside the `data/` named
 volume entirely — and deletes it via a `BackgroundTask` attached to the `FileResponse`, after the
 response finishes streaming. Follow this pattern (in-memory bytes, or a temp file + `BackgroundTask`
-cleanup) for any future export-like endpoint — never write a new one into `data/exports/`.
+cleanup) for any future export-like endpoint — never write a new one into `data/exports/`. `main.py`'s
+`export()` does write one thing to SQLite on success: `photos.exported_at` (schema v6+), a timestamp
+used only to show an "already exported" badge in the grid (`_hydrate()`'s `exported` field) — this is
+metadata about the export having happened, not the exported bytes themselves, so it doesn't reintroduce
+on-disk persistence of the export output.
 
 **Docker packaging** (`Dockerfile` + `docker-compose.yml`, see [docs/docker.md](docs/docker.md) for
 the full rationale and troubleshooting): one `Dockerfile`, `ARG VARIANT=cpu|cuda` selects the base

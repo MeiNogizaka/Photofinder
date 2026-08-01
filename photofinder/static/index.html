@@ -8,7 +8,7 @@
   :root {
     --paper:#f5f7f7; --card:#fff; --ink:#1b2226; --ink2:#5a686e;
     --line:#d9e0e2; --line2:#e7ecee; --accent:#0e7fa8; --accent-soft:#e3f0f5;
-    --chip:#eef3f4; --ok:#2e8b57;
+    --chip:#eef3f4; --ok:#2e8b57; --thumb-min:180px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -48,7 +48,7 @@
   #main { flex:1; display:flex; min-height:0; }
   #gridwrap { flex:1; overflow-y:auto; padding:14px 16px; }
   #count { font-size:12px; color:var(--ink2); margin:0 0 10px; }
-  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--thumb-min),1fr)); gap:8px; }
   .thumb {
     position:relative; border-radius:5px; overflow:hidden; cursor:pointer;
     aspect-ratio:4/3; background:var(--chip); margin:0;
@@ -70,9 +70,13 @@
 
   #panel {
     width:320px; flex:none; border-left:1px solid var(--line); background:var(--card);
-    overflow-y:auto; padding:14px 16px; display:none;
+    overflow-y:auto; padding:14px 16px;
   }
-  #panel.open { display:block; }
+  #panelIdle { display:flex; height:100%; align-items:center; justify-content:center;
+    text-align:center; color:var(--ink2); font-size:12.5px; padding:0 12px; }
+  #panelDetail { display:none; }
+  #panel.open #panelIdle { display:none; }
+  #panel.open #panelDetail { display:block; }
   #panel h2 { font-size:13px; margin:0; word-break:break-all; }
   #panel .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
   #panel img { width:100%; border-radius:5px; margin:10px 0; }
@@ -128,11 +132,18 @@
   .post-row a:hover { text-decoration:underline; }
   .post-row button { background:none; border:0; color:var(--ink2); padding:0 2px; font-size:11px; cursor:pointer; flex:none; }
   .post-row .meta { color:var(--ink2); font-size:10.5px; }
+  .post-row .plat {
+    font:700 8.5px ui-monospace,Consolas,monospace; letter-spacing:.06em;
+    background:var(--accent); color:#fff; border-radius:3px; padding:1px 5px; flex:none;
+  }
+  .post-platform-row { display:flex; gap:10px; font-size:11.5px; margin-top:8px; }
+  .post-platform-row label { display:flex; align-items:center; gap:3px; cursor:pointer; }
   #postAddRow { display:flex; gap:6px; margin-top:4px; }
-  #postUrlInput {
+  #postUrlInput, #postLabelInput {
     flex:1; background:var(--paper); border:1px solid var(--line);
     border-radius:6px; padding:6px 9px; color:var(--ink); font:inherit; font-size:12px;
   }
+  #postLabelInput:not([hidden]) { display:block; width:100%; margin-top:6px; }
   #postDupWarning {
     margin-top:8px; font-size:11px; color:var(--ink2); background:var(--accent-soft);
     border:1px solid var(--accent); border-radius:6px; padding:7px 9px;
@@ -170,6 +181,27 @@
     border-radius:8px; padding:20px; min-width:420px;
   }
   dialog::backdrop { background:rgba(10,16,20,.5); }
+  #lightboxDlg {
+    padding:0; min-width:0; width:min(96vw,1400px); max-width:none;
+    background:#000; border:0;
+  }
+  #lightboxDlg::backdrop { background:rgba(0,0,0,.85); }
+  #lightboxDlg .lb-body { position:relative; display:flex; align-items:center; justify-content:center; }
+  #lightboxDlg img { display:block; max-width:100%; max-height:88vh; object-fit:contain; margin:0 auto; }
+  #lightboxDlg .lb-close, #lightboxDlg .lb-nav {
+    position:absolute; background:rgba(20,25,28,.55); color:#fff; border:0;
+    border-radius:50%; width:38px; height:38px; font-size:18px; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  #lightboxDlg .lb-close { top:10px; right:10px; }
+  #lightboxDlg .lb-prev { left:10px; top:50%; transform:translateY(-50%); }
+  #lightboxDlg .lb-next { right:10px; top:50%; transform:translateY(-50%); }
+  #lightboxDlg .lb-nav:disabled { opacity:.25; cursor:default; }
+  #lightboxDlg .lb-caption {
+    position:absolute; left:0; right:0; bottom:0; padding:8px 14px;
+    background:linear-gradient(transparent, rgba(0,0,0,.75)); color:#fff; font-size:12px;
+    text-align:center; word-break:break-all;
+  }
   /* テキスト系入力のみ全幅にする (チェックボックス/スライダーに当てると
      ボックスが全幅に伸びて中央に描画され、ラベル文が端に追いやられる) */
   dialog input:not([type=checkbox]):not([type=range]) {
@@ -216,6 +248,13 @@
     background:var(--ok); color:#fff; border-radius:3px; padding:1px 6px;
   }
   .thumb .badge.sim { background:rgba(15,25,30,.6); font-weight:400; }
+  .thumb .badge.status {
+    left:auto; right:6px; top:6px; width:18px; height:18px; padding:0;
+    display:flex; align-items:center; justify-content:center; font-size:10.5px;
+    border-radius:50%; box-shadow:0 0 0 1.5px rgba(0,0,0,.35);
+  }
+  .thumb .badge.status.exported { background:var(--accent); }
+  .thumb .badge.status.posted { background:var(--ok); top:28px; }
   body.dragging::after {
     content:"画像をドロップして原本を検索"; position:fixed; inset:0; z-index:99;
     display:grid; place-items:center; font-size:20px; font-weight:700; color:var(--accent);
@@ -233,7 +272,8 @@
   <input id="dateTo" type="date" title="この日以前">
   <button id="searchBtn">検索</button>
   <button id="orderBtn" class="ghost" title="時系列の並び順を切り替え">新しい順 ↓</button>
-  <button id="postedBtn" class="ghost" title="X投稿状況で絞り込み">投稿状況: 全て</button>
+  <button id="postedBtn" class="ghost" title="投稿状況で絞り込み">投稿状況: 全て</button>
+  <button id="thumbSizeBtn" class="ghost" title="サムネイルサイズを切り替え">サイズ: 中</button>
 </header>
 
 <div id="geoBanner" hidden>
@@ -259,6 +299,8 @@
   </div>
 
   <aside id="panel">
+    <div id="panelIdle">写真を選択してください</div>
+    <div id="panelDetail">
     <div class="row">
       <h2 id="pName"></h2>
       <button class="ghost" style="padding:2px 8px" onclick="closePanel()">✕</button>
@@ -288,13 +330,20 @@
     <input id="tagInput" placeholder="タグを追加して Enter" list="tagList">
     <datalist id="tagList"></datalist>
     <datalist id="placeSuggestList"></datalist>
-    <p class="lbl">X投稿</p>
+    <p class="lbl">SNS投稿</p>
     <div id="pPosts"></div>
+    <div id="postPlatformRow" class="post-platform-row">
+      <label><input type="radio" name="postPlatform" value="x" checked> X</label>
+      <label><input type="radio" name="postPlatform" value="instagram"> Instagram</label>
+      <label><input type="radio" name="postPlatform" value="other"> その他</label>
+    </div>
+    <input id="postLabelInput" placeholder="サービス名 (例: Tumblr)" hidden>
     <div id="postAddRow">
-      <input id="postUrlInput" placeholder="ツイートURLを貼り付け">
+      <input id="postUrlInput" placeholder="投稿URLを貼り付け">
       <button id="postAddBtn" class="ghost" style="font-size:11.5px">追加</button>
     </div>
     <div id="postDupWarning" hidden></div>
+    </div>
   </aside>
 </div>
 
@@ -556,6 +605,16 @@
   </div>
 </dialog>
 
+<dialog id="lightboxDlg">
+  <div class="lb-body">
+    <button class="lb-close" title="閉じる (Esc)" onclick="closeLightbox()">✕</button>
+    <button class="lb-nav lb-prev" title="前の写真 (←)" onclick="lightboxNav(-1)">‹</button>
+    <img id="lbImg" alt="">
+    <button class="lb-nav lb-next" title="次の写真 (→)" onclick="lightboxNav(1)">›</button>
+    <div class="lb-caption" id="lbCaption"></div>
+  </div>
+</dialog>
+
 <dialog id="rootDlg">
   <b>走査フォルダを追加</b>
   <p style="margin:8px 0 2px">フォルダパス</p>
@@ -582,6 +641,10 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 // Windows/POSIX 両方の区切りに対応してファイル名部分を取り出す
 const basename = (p) => String(p ?? "").split(/[\\/]/).pop();
+// グリッド項目共通の状態バッジ (書き出し済み/投稿済み)。両テンプレートで使い回す
+const statusBadges = (it) =>
+  (it.exported ? '<span class="badge status exported" title="書き出し済み">⇩</span>' : "") +
+  (it.posted ? '<span class="badge status posted" title="投稿済み">✓</span>' : "");
 
 async function api(path, opts) {
   const res = await fetch("/api" + path, opts);
@@ -593,7 +656,25 @@ async function api(path, opts) {
 }
 
 let sortOrder = "desc";  // 時系列の並び順 (ブラウズ時)
-let postedFilter = null;  // X投稿状況の絞り込み: null=全て / true=投稿済み / false=未投稿
+let postedFilter = null;  // 投稿状況の絞り込み: null=全て / true=投稿済み / false=未投稿
+
+const THUMB_SIZE_KEY = "pf_thumb_size_v1";
+const THUMB_SIZES = { s: "120px", m: "180px", l: "260px" };
+const THUMB_LABELS = { s: "小", m: "中", l: "大" };
+const THUMB_ORDER = ["s", "m", "l"];
+function loadThumbSize() {
+  try {
+    const v = localStorage.getItem(THUMB_SIZE_KEY);
+    return THUMB_SIZES[v] ? v : "m";
+  } catch { return "m"; }
+}
+function applyThumbSize(size) {
+  document.documentElement.style.setProperty("--thumb-min", THUMB_SIZES[size] || THUMB_SIZES.m);
+  $("thumbSizeBtn").textContent = "サイズ: " + THUMB_LABELS[size];
+  try { localStorage.setItem(THUMB_SIZE_KEY, size); } catch {}
+}
+let thumbSize = loadThumbSize();
+applyThumbSize(thumbSize);
 
 function params() {
   const p = new URLSearchParams();
@@ -632,10 +713,12 @@ async function runSearch(reset = true) {
       const fig = document.createElement("figure");
       fig.className = "thumb"; fig.dataset.id = it.id;
       fig.innerHTML = `<img src="${esc(it.thumb_url)}" loading="lazy" decoding="async" alt="">
+        ${statusBadges(it)}
         <figcaption><span class="fname">${esc(it.filename)}</span>${
           it.top_tags.length ? `<span class="ftags">${esc(it.top_tags.join(" · "))}</span>` : ""
         }</figcaption>`;
       fig.onclick = () => select(it.id);
+      fig.ondblclick = () => openLightbox(it.id);
       $("grid").appendChild(fig);
     }
     if (!data.next_cursor) done = true; else offset += data.items.length;
@@ -860,8 +943,12 @@ function renderPosts(posts) {
     const row = document.createElement("div");
     row.className = "post-row";
     const meta = [post.posted_at, post.caption_snippet].filter(Boolean).join(" · ");
+    const platLabel = post.platform === "instagram" ? "IG"
+      : post.platform === "other" ? (post.platform_label || "他")
+      : "X";
     row.innerHTML = `
       <div class="row1">
+        <span class="plat">${esc(platLabel)}</span>
         <a href="${esc(post.url)}" target="_blank" rel="noopener noreferrer">${esc(post.url)}</a>
         <button title="削除" data-x>×</button>
       </div>
@@ -896,16 +983,25 @@ async function loadSimilarPosted(id) {
   }
 }
 
+document.querySelectorAll('input[name="postPlatform"]').forEach(r =>
+  r.addEventListener("change", () => {
+    $("postLabelInput").hidden =
+      document.querySelector('input[name="postPlatform"]:checked')?.value !== "other";
+  }));
+
 $("postAddBtn").onclick = async () => {
   const url = $("postUrlInput").value.trim();
   if (!url) return;
+  const platform = document.querySelector('input[name="postPlatform"]:checked')?.value || "x";
+  const platformLabel = $("postLabelInput").value.trim();
   $("postAddBtn").disabled = true;
   try {
     const res = await api(`/photos/${selectedId}/posts`, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({url}),
+      body: JSON.stringify({url, platform, platform_label: platformLabel || undefined}),
     });
     $("postUrlInput").value = "";
+    $("postLabelInput").value = "";
     renderDupWarning(res.duplicate_warnings);
     const p = await api("/photos/" + selectedId);
     renderPosts(p.posts);
@@ -920,6 +1016,51 @@ function closePanel() {
   $("panel").classList.remove("open");
   document.querySelectorAll(".thumb.sel").forEach(t => t.classList.remove("sel"));
 }
+
+// --- ライトボックス (原寸表示 + 前後移動) ---
+let lightboxId = null;
+
+function openLightbox(id) {
+  lightboxId = id;
+  const img = $("lbImg");
+  img.onerror = () => { img.onerror = null; img.src = `/api/photos/${id}/preview`; };
+  img.src = `/api/photos/${id}/file`;
+  const fig = document.querySelector(`#grid .thumb[data-id="${id}"]`);
+  $("lbCaption").textContent = fig?.querySelector(".fname")?.textContent
+    || fig?.querySelector("figcaption")?.textContent || "";
+  updateLightboxNavState();
+  if (!$("lightboxDlg").open) $("lightboxDlg").showModal();
+}
+
+function closeLightbox() {
+  if ($("lightboxDlg").open) $("lightboxDlg").close();
+}
+
+function lightboxIds() {
+  return [...document.querySelectorAll("#grid .thumb[data-id]")].map(t => +t.dataset.id);
+}
+
+function updateLightboxNavState() {
+  const ids = lightboxIds();
+  const idx = ids.indexOf(lightboxId);
+  $("lightboxDlg").querySelector(".lb-prev").disabled = idx <= 0;
+  $("lightboxDlg").querySelector(".lb-next").disabled = idx === -1 || idx >= ids.length - 1;
+}
+
+function lightboxNav(dir) {
+  const ids = lightboxIds();
+  const idx = ids.indexOf(lightboxId);
+  if (idx === -1) return;
+  const next = ids[idx + dir];
+  if (next === undefined) return;
+  openLightbox(next);
+}
+
+document.addEventListener("keydown", e => {
+  if (!$("lightboxDlg").open || e.isComposing) return;
+  if (e.key === "ArrowLeft") lightboxNav(-1);
+  else if (e.key === "ArrowRight") lightboxNav(1);
+});
 
 // --- 逆検索（画像 → 原本特定） ---
 let reverseMode = false;
@@ -951,8 +1092,10 @@ async function reverseSearch(file) {
       fig.className = "thumb"; fig.dataset.id = it.id;
       fig.innerHTML = `<img src="${esc(it.thumb_url)}" loading="lazy" alt="">
         <span class="badge ${cls === "exact" ? "" : "sim"}">${esc(badge(it))}</span>
+        ${statusBadges(it)}
         <figcaption>${esc(it.filename)}</figcaption>`;
       fig.onclick = () => select(it.id);
+      fig.ondblclick = () => openLightbox(it.id);
       grid.appendChild(fig);
     }
   };
@@ -1002,8 +1145,9 @@ document.addEventListener("keydown", e => {
   // "/" ショートカットは他の入力欄への通常入力 (日付 2025/08 等) を奪わないようにする
   const inField = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
   if (e.key === "/" && !inField) { e.preventDefault(); $("q").focus(); }
-  // IME変換の取り消しEscでパネルまで閉じないようにする
-  if (e.key === "Escape" && !e.isComposing) closePanel();
+  // IME変換の取り消しEscでパネルまで閉じないようにする。ライトボックス表示中は
+  // dialog のネイティブEsc処理に任せ、右パネルまで一緒に閉じないようにする
+  if (e.key === "Escape" && !e.isComposing && !$("lightboxDlg").open) closePanel();
 });
 $("gridwrap").addEventListener("scroll", e => {
   const el = e.target;
@@ -2079,12 +2223,18 @@ $("orderBtn").onclick = () => {
   runSearch();
 };
 
-// --- X投稿状況フィルタ (全て → 投稿済み → 未投稿 → 全て) ---
+// --- 投稿状況フィルタ (全て → 投稿済み → 未投稿 → 全て) ---
 $("postedBtn").onclick = () => {
   postedFilter = postedFilter === null ? true : postedFilter === true ? false : null;
   $("postedBtn").textContent = "投稿状況: " +
     (postedFilter === null ? "全て" : postedFilter ? "投稿済み" : "未投稿");
   runSearch();
+};
+
+// --- サムネイルサイズ切替 (小 → 中 → 大 → 小)、localStorage に永続化 ---
+$("thumbSizeBtn").onclick = () => {
+  thumbSize = THUMB_ORDER[(THUMB_ORDER.indexOf(thumbSize) + 1) % THUMB_ORDER.length];
+  applyThumbSize(thumbSize);
 };
 
 // --- スキャン停止/再開 ---

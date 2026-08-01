@@ -43,6 +43,7 @@ erDiagram
         int deleted "tombstone"
         text created_at
         text updated_at
+        text exported_at "最後に書き出し成功したUTC時刻。NULLなら未書き出し"
     }
     EXIF {
         int photo_id PK_FK
@@ -116,10 +117,12 @@ erDiagram
     PHOTO_POSTS {
         int id PK
         int photo_id FK
-        text url "ツイートURL"
+        text url "投稿URL (X/Instagram/その他)"
         text posted_at "判明していればISO8601。現状は手動入力のみ"
-        text caption_snippet "oEmbedから取得したツイート本文の抜粋"
-        text source "manual|archive (archiveはXデータアーカイブ取込、未実装)"
+        text caption_snippet "oEmbedから取得したツイート本文の抜粋 (Xのみ)"
+        text source "manual|archive (archiveはXデータアーカイブ取込)"
+        text platform "x|instagram|other。投稿先SNS種別 (sourceとは独立)"
+        text platform_label "platform='other'の時のみ使う任意の表示名"
         text note
         text created_at
     }
@@ -139,6 +142,7 @@ erDiagram
 | v3 | geo.poi_alt 追加（周辺主要 POI 名。「地主神社」の写真を「清水寺」で検索可能にする）。app_settings テーブル追加（scan_on_startup, backup_auto） |
 | v4 | roots.recursive 追加（フォルダごとに再帰/直下のみを切替） |
 | v5 | photo_posts 追加（X投稿リンク・重複投稿警告機能。ALTER不要のCREATE TABLE IF NOT EXISTSのみのため _migrate() への追加コードなし） |
+| v6 | photo_posts.platform/platform_label 追加（X以外のSNS投稿リンクにも対応）。photos.exported_at 追加（書き出し済みマーク表示用） |
 
 ER 図との差分に気づいたら schema.sql を正としてください。
 

@@ -10,22 +10,22 @@
 
 | Method | Path | 概要 |
 |---|---|---|
-| GET | `/search` | ハイブリッド検索（自然言語 + フィルタ）。`order=asc\|desc` で時系列並び順切替。`posted=true\|false` でX投稿リンクの有無を絞り込み（省略時は全件） |
+| GET | `/search` | ハイブリッド検索（自然言語 + フィルタ）。`order=asc\|desc` で時系列並び順切替。`posted=true\|false` で投稿リンク（プラットフォーム問わず）の有無を絞り込み（省略時は全件） |
 | POST | `/search/by-image` | 画像類似検索・原本特定（multipart） |
 | GET | `/photos/{id}` | 写真詳細（EXIF・タグ・検出・OCR・GEO） |
 | GET | `/photos/{id}/thumb` | サムネ WebP。クライアント側（`thumb_url`）が `?h={xxhash}` を付与する（内容アドレス化。サーバは `h` を検証・要求しない＝無くても200を返すが、同じ id でも中身が変わればハッシュも変わるURLにしないと `Cache-Control: immutable` で古い画像がキャッシュに残る） |
 | GET | `/photos/{id}/preview` | 1600px プレビュー WebP。thumb と同様、クライアント側で `?h={xxhash}` を付与する（サーバ未検証） |
 | GET | `/photos/{id}/file` | 原本ファイル |
 | POST | `/photos/{id}/open-in-explorer` | OS のファイルマネージャで場所を開く (Dockerコンテナ実行時は501) |
-| POST | `/photos/{id}/export` | 切り出し + 透かし + メタデータ除去で書き出し |
+| POST | `/photos/{id}/export` | 切り出し + 透かし + メタデータ除去で書き出し。成功時 `photos.exported_at` を更新（書き出しファイル自体は永続化しない。「いつ書き出したか」のメタ情報のみ記録し、`/search` の `exported` バッジ表示に使う） |
 | PATCH | `/photos/{id}/place` | 写真1枚の場所名を手動で上書き/解除（`poi_name:null` で自動判定に戻す） |
 | POST | `/photos/{id}/tags` | 手動タグ追加 |
 | DELETE | `/photos/{id}/tags/{tagId}` | タグ削除（手動）/ 否認（自動） |
 | PATCH | `/photos/{id}/tags/{tagId}` | 自動タグの確定(1)/否認(-1)/取り消し(0) |
 | GET | `/tags?q=` | タグオートコンプリート |
-| POST | `/photos/{id}/posts` | X投稿リンクを追加 `{url, note?, posted_at?}`。X公式oEmbedでキャプションをベストエフォート取得（失敗しても登録は続行）。応答に `duplicate_warnings`（類似度の高い投稿済み写真、下記参照） |
-| DELETE | `/photos/{id}/posts/{postId}` | X投稿リンクを削除 |
-| GET | `/photos/{id}/posts/similar` | この写真と類似度が高く、既にX投稿済みの写真一覧（重複投稿の警告用。ML未対応/未ベクトル化なら空配列） |
+| POST | `/photos/{id}/posts` | SNS投稿リンクを追加 `{url, platform?, platform_label?, note?, posted_at?}`。`platform` は `x`(既定)\|`instagram`\|`other`、`other` の時のみ `platform_label` を保存。X公式oEmbedでのキャプション取得は `platform=x` の時のみベストエフォートで実行（失敗しても登録は続行）。応答に `duplicate_warnings`（類似度の高い投稿済み写真、下記参照） |
+| DELETE | `/photos/{id}/posts/{postId}` | SNS投稿リンクを削除 |
+| GET | `/photos/{id}/posts/similar` | この写真と類似度が高く、既に投稿済みの写真一覧（プラットフォーム問わず。重複投稿の警告用。ML未対応/未ベクトル化なら空配列） |
 | GET | `/roots` | 走査ルート一覧（`photo_count`・`recursive` 付き） |
 | POST | `/roots` | ルート追加（`recursive` で再帰/直下のみ指定。追加分を即インデックス） |
 | DELETE | `/roots/{id}` | ルートをインデックスから除外（ファイルには触れない。スキャン中は 409） |
@@ -85,7 +85,9 @@
       "taken_at": "2025-11-03T07:12:44",
       "width": 6000, "height": 4000, "ext": "jpg",
       "filename": "DSC01234.jpg",
-      "top_tags": ["カワセミ", "鳥", "青い鳥"]
+      "top_tags": ["カワセミ", "鳥", "青い鳥"],
+      "posted": false,
+      "exported": false
     }
   ],
   "total_estimate": 143,
@@ -143,27 +145,34 @@
   ],
   "posts": [
     { "id": 1, "url": "https://x.com/example/status/123", "posted_at": null,
-      "caption_snippet": "鴨川で見かけたカワセミ", "source": "manual", "note": null,
+      "caption_snippet": "鴨川で見かけたカワセミ", "source": "manual",
+      "platform": "x", "platform_label": null, "note": null,
       "created_at": "2026-07-11 04:40:25" }
   ]
 }
 ```
 
-## X投稿リンク・重複投稿防止 (`/photos/{id}/posts*`)
+## SNS投稿リンク・重複投稿防止 (`/photos/{id}/posts*`)
 
-過去にXへ投稿した写真とツイートURLを手動で紐づける機能。1枚の写真に複数の投稿リンクを
-許容する（再投稿・スレッド分割等に対応）。X側の画像は切り抜き・透かしでファイルが完全一致
-しないことが多いため、重複投稿の警告は xxhash/pHash の完全一致ではなく SigLIP 埋め込みの
-コサイン類似度で行う（`GET /photos/{id}/posts/similar`、閾値 `SIMILAR_POST_MIN_SCORE=0.75`
-は `main.py` 内の暫定値。実運用で誤検知/見逃しを見ながら調整する前提）。
+過去にSNS（X/Instagram/その他）へ投稿した写真と投稿URLを手動で紐づける機能。1枚の写真に
+複数の投稿リンクを許容する（再投稿・スレッド分割・複数プラットフォームへの投稿等に対応）。
+投稿先は `platform` (`x`|`instagram`|`other`) で区別し、`other` の場合のみ任意の表示名を
+`platform_label` に保存できる。X側の画像は切り抜き・透かしでファイルが完全一致しないことが
+多いため、重複投稿の警告は xxhash/pHash の完全一致ではなく SigLIP 埋め込みのコサイン類似度で
+行う（`GET /photos/{id}/posts/similar`、閾値 `SIMILAR_POST_MIN_SCORE=0.75` は `main.py` 内の
+暫定値。実運用で誤検知/見逃しを見ながら調整する前提。プラットフォーム問わず全ての投稿済み写真
+が対象）。X公式oEmbedによるキャプション取得（`caption_snippet`）は `platform=x` の投稿のみ
+ベストエフォートで実行される。
 
 運用フロー:
-1. Xからダウンロードした投稿済み画像を検索バーにドロップ/貼り付け（既存の `/search/by-image`
+1. SNSからダウンロードした投稿済み画像を検索バーにドロップ/貼り付け（既存の `/search/by-image`
    をそのまま流用した逆引き検索）→ 類似候補から該当するローカル写真を選ぶ
-2. 写真詳細パネルの「X投稿」欄にツイートURLを貼り付けて追加
+2. 写真詳細パネルの「SNS投稿」欄でプラットフォーム（X/Instagram/その他）を選び、投稿URLを
+   貼り付けて追加
 3. 追加時、類似度の高い「既に投稿済みの写真」があれば `duplicate_warnings` で警告
    （ブロックはしない。最終判断はユーザー）
-4. 検索の `posted=true|false` フィルタで「投稿済み/未投稿」を一覧比較できる
+4. 検索の `posted=true|false` フィルタで「投稿済み/未投稿」を一覧比較できる（プラットフォーム
+   問わず、いずれかの投稿リンクがあれば `posted=true` 扱い）
 
 `caption_snippet` は X公式 oEmbed (`https://publish.twitter.com/oembed`) からのベストエフォート
 取得（HTMLタグを除去した本文の先頭200文字）。ネットワーク不通や非公開ツイート等で取得できない

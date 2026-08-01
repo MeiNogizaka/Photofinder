@@ -2,7 +2,7 @@
 -- M1 では embedding/FTS/検出系テーブルも作成しておく（M2 以降で使用）
 
 CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT);
-INSERT OR IGNORE INTO schema_meta VALUES ('schema_version', '5');
+INSERT OR IGNORE INTO schema_meta VALUES ('schema_version', '6');
 
 -- アプリ設定 (key-value)。既定値はここで播種し、変更は PATCH /api/settings
 CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS photos (
     deleted     INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    exported_at TEXT,   -- 最後に書き出し(export)に成功したUTC時刻。NULLなら未書き出し
     UNIQUE (root_id, path)
 );
 CREATE INDEX IF NOT EXISTS idx_photos_hash  ON photos(xxhash);
@@ -119,14 +120,17 @@ CREATE TABLE IF NOT EXISTS faiss_pending (
     vector   BLOB
 );
 
--- X (旧Twitter) への投稿リンク。1枚の写真に複数投稿を許容 (再投稿・スレッド等)
+-- SNS (X/Instagram/その他) への投稿リンク。1枚の写真に複数投稿を許容 (再投稿・スレッド等)
 CREATE TABLE IF NOT EXISTS photo_posts (
     id              INTEGER PRIMARY KEY,
     photo_id        INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
     url             TEXT NOT NULL,
     posted_at       TEXT,    -- 判明していれば ISO8601 (現状は手動入力のみ、自動取得は未対応)
-    caption_snippet TEXT,    -- oEmbed から取得したツイート本文の抜粋 (取得失敗時は NULL)
+    caption_snippet TEXT,    -- oEmbed から取得したツイート本文の抜粋 (X のみ。取得失敗/対象外は NULL)
     source          TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','archive')),
+    -- platform: 投稿先SNS (x/instagram/other)。source (manual/archive、入力経路) とは独立した軸
+    platform        TEXT NOT NULL DEFAULT 'x' CHECK (platform IN ('x','instagram','other')),
+    platform_label  TEXT,    -- platform='other' の時だけ使う任意の表示名 (例: "Tumblr")
     note            TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
