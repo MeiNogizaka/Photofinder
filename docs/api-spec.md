@@ -10,7 +10,7 @@
 
 | Method | Path | 概要 |
 |---|---|---|
-| GET | `/search` | ハイブリッド検索（自然言語 + フィルタ）。`order=asc\|desc` で時系列並び順切替。`posted=true\|false` で投稿リンク（プラットフォーム問わず）の有無を絞り込み（省略時は全件） |
+| GET | `/search` | ハイブリッド検索（自然言語 + フィルタ）。`order=asc\|desc` で時系列並び順切替。`posted=true\|false` で投稿リンク（プラットフォーム問わず）の有無を絞り込み（省略時は全件）。`exported=true\|false` で書き出し済みか否かを絞り込み（省略時は全件）。`exported=true` かつ `q` が空（ブラウズ時）は撮影日時ではなく書き出し日時で並び替え（`order` で新しい順/古い順を切替、既定は最近書き出した順） |
 | POST | `/search/by-image` | 画像類似検索・原本特定（multipart） |
 | GET | `/photos/{id}` | 写真詳細（EXIF・タグ・検出・OCR・GEO） |
 | GET | `/photos/{id}/thumb` | サムネ WebP。クライアント側（`thumb_url`）が `?h={xxhash}` を付与する（内容アドレス化。サーバは `h` を検証・要求しない＝無くても200を返すが、同じ id でも中身が変わればハッシュも変わるURLにしないと `Cache-Control: immutable` で古い画像がキャッシュに残る） |

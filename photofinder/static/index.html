@@ -175,7 +175,7 @@
   #scanBar i { display:block; height:100%; width:0%; background:var(--accent);
     transition:width .3s ease; }
   #addRoot { margin-left:auto; font-size:11px; padding:3px 10px; }
-  header #orderBtn, header #postedBtn { flex:none; }
+  header #orderBtn, header #postedBtn, header #exportedBtn { flex:none; }
   dialog {
     background:var(--card); color:var(--ink); border:1px solid var(--line);
     border-radius:8px; padding:20px; min-width:420px;
@@ -273,6 +273,7 @@
   <button id="searchBtn">検索</button>
   <button id="orderBtn" class="ghost" title="時系列の並び順を切り替え">新しい順 ↓</button>
   <button id="postedBtn" class="ghost" title="投稿状況で絞り込み">投稿状況: 全て</button>
+  <button id="exportedBtn" class="ghost" title="書き出し状況で絞り込み">書き出し: 全て</button>
   <button id="thumbSizeBtn" class="ghost" title="サムネイルサイズを切り替え">サイズ: 中</button>
 </header>
 
@@ -657,6 +658,7 @@ async function api(path, opts) {
 
 let sortOrder = "desc";  // 時系列の並び順 (ブラウズ時)
 let postedFilter = null;  // 投稿状況の絞り込み: null=全て / true=投稿済み / false=未投稿
+let exportedFilter = null;  // 書き出し状況の絞り込み: null=全て / true=書き出し済み / false=未書き出し
 
 const THUMB_SIZE_KEY = "pf_thumb_size_v1";
 const THUMB_SIZES = { s: "120px", m: "180px", l: "260px" };
@@ -682,6 +684,7 @@ function params() {
   if ($("dateFrom").value) p.set("date_from", $("dateFrom").value);
   if ($("dateTo").value) p.set("date_to", $("dateTo").value);
   if (postedFilter !== null) p.set("posted", postedFilter);
+  if (exportedFilter !== null) p.set("exported", exportedFilter);
   p.set("order", sortOrder);
   p.set("offset", offset);
   return p;
@@ -2228,6 +2231,14 @@ $("postedBtn").onclick = () => {
   postedFilter = postedFilter === null ? true : postedFilter === true ? false : null;
   $("postedBtn").textContent = "投稿状況: " +
     (postedFilter === null ? "全て" : postedFilter ? "投稿済み" : "未投稿");
+  runSearch();
+};
+
+// --- 書き出し状況フィルタ (全て → 書き出し済み → 未書き出し → 全て) ---
+$("exportedBtn").onclick = () => {
+  exportedFilter = exportedFilter === null ? true : exportedFilter === true ? false : null;
+  $("exportedBtn").textContent = "書き出し: " +
+    (exportedFilter === null ? "全て" : exportedFilter ? "書き出し済み" : "未書き出し");
   runSearch();
 };
 

@@ -77,12 +77,14 @@ def _like_escape(s: str) -> str:
 
 
 def _build_filters(date_from, date_to, camera, ext, tags,
-                   place=None, bbox=None, posted=None) -> tuple[list, list]:
+                   place=None, bbox=None, posted=None, exported=None) -> tuple[list, list]:
     conds, args = ["p.deleted=0", "p.index_state='complete'"], []
     if posted is not None:
         conds.append(
             ("EXISTS" if posted else "NOT EXISTS")
             + " (SELECT 1 FROM photo_posts pp WHERE pp.photo_id=p.id)")
+    if exported is not None:
+        conds.append("p.exported_at IS " + ("NOT NULL" if exported else "NULL"))
     if date_from:
         conds.append("p.taken_at >= ?"); args.append(date_from)
     if date_to:
@@ -234,6 +236,7 @@ def search(
     place: str | None = None,
     bbox: str | None = None,  # minLon,minLat,maxLon,maxLat
     posted: bool | None = None,  # X投稿リンクの有無で絞り込み (未指定なら全件)
+    exported: bool | None = None,  # 書き出し済みか否かで絞り込み (未指定なら全件)
     mode: str = Query("hybrid", pattern="^(hybrid|text|vector)$"),
     order: str = Query("desc", pattern="^(asc|desc)$"),  # ブラウズ時の時系列順
     limit: int = Query(100, le=500),
@@ -247,17 +250,20 @@ def search(
         except (ValueError, AssertionError):
             raise HTTPException(422, "bbox must be minLon,minLat,maxLon,maxLat")
     conds, args = _build_filters(date_from, date_to, camera, ext, tags,
-                                 place=place, bbox=bbox_vals, posted=posted)
+                                 place=place, bbox=bbox_vals, posted=posted, exported=exported)
 
     if not q:  # ブラウズ: 時系列 (order=desc 新しい順 / asc 古い順)
         where = " AND ".join(conds)
         direction = "ASC" if order == "asc" else "DESC"
+        # 書き出し済み絞り込み時は書き出し日時順 (最近書き出した順がデフォルト)。
+        # 未書き出し/未指定は exported_at が NULL のままなので従来通り撮影日時順。
+        sort_col = "p.exported_at" if exported else "p.taken_at"
         total = db.execute(
             f"SELECT count(*) AS c FROM photos p LEFT JOIN exif e ON e.photo_id=p.id "
             f"WHERE {where}", args).fetchone()["c"]
         rows = db.execute(
             f"SELECT p.id FROM photos p LEFT JOIN exif e ON e.photo_id=p.id "
-            f"WHERE {where} ORDER BY p.taken_at {direction} LIMIT ? OFFSET ?",
+            f"WHERE {where} ORDER BY {sort_col} {direction} LIMIT ? OFFSET ?",
             args + [limit, offset]).fetchall()
         items = _hydrate([r["id"] for r in rows])
         return {"items": items, "total_estimate": total,
