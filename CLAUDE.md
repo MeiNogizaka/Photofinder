@@ -164,13 +164,19 @@ process back" pattern the old DB-only restore used, extended to the whole data d
 fresh `VACUUM main INTO`, everything else — `vectors.faiss`, `poi.db`, `thumbs/`, `previews/`,
 `species_bank.npz`/`color_bank.npz` — via plain file copy; `poi.db` needs no WAL checkpoint since
 `poi_fetch.open_poi_db()` never sets `journal_mode=WAL`). Before extracting, the live data is
-`Path.rename()`d aside into `data/backup/before_restore_<timestamp>/` (not copied — instant, no
-extra disk use; only the single most recent staging generation is kept, deleted before the next one
-is created) so a bad restore can be recovered from the volume by hand; a failure *during* extraction
-rolls that staging back via `rollback_staged()` and leaves the process running rather than
-restarting into a broken state. Upload validation (`validate_backup_zip()` — manifest present,
-`photofinder.db` present, every member's resolved path inside `DATA_DIR`, no absolute-path or
-symlink members) always runs before any live file is touched.
+`Path.rename()`d aside into `data/backup/before_restore_<timestamp>/` (rename itself needs no extra
+disk; peak free space during extract is roughly the uncompressed backup size because old staged tree
++ new tree coexist). Only the single most recent staging generation is kept, and the previous
+generation is deleted only after the new stage completes successfully. A failure during staging or
+extraction rolls back via `rollback_staged()` (or partial stage undo) and leaves the process running.
+A `backup/RESTORE_IN_PROGRESS` marker is written before rename; on next startup
+`recover_incomplete_restore()` runs *before* `open_db` and rolls back if the marker is set or if
+`photofinder.db` is missing while a `before_restore_*` exists — otherwise a crashed mid-restore
+would create an empty DB and hide the real data. Upload validation (`validate_backup_zip()` —
+`format_version`, manifest + DB present, allowlisted members only, zip-slip / absolute / symlink
+guards) always runs before any live file is touched. Backup build and restore share a non-blocking
+lock (`try_acquire` / `is_busy`); scan, vector rebuild, archive import, and root-add refuse to start
+while busy. Upload size is capped by `PHOTOFINDER_BACKUP_MAX_UPLOAD_BYTES` (default 32GiB).
 
 **GPU acceleration: CUDA only, no DirectML.** `ml.py`'s `ORT_PROVIDERS = ["CUDAExecutionProvider",
 "CPUExecutionProvider"]` is reused by every ONNX session in the app (`ml.py`, `detector.py`).

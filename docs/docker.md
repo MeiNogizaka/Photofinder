@@ -165,6 +165,18 @@ poi.dbが全部そのまま移り、**新環境での再スキャンは不要**�
 volume操作は一切不要。復元は数百MB〜数GB規模のブラウザアップロードになるため、
 低速/不安定な回線ではなくローカルネットワーク越しに行うことを推奨する。
 
+**空き容量**: renameによる退避自体は追加ディスクを使わないが、展開中は
+「退避した旧ツリー + 新ツリー + アップロードzip」が同じvolume上に同居する。
+ピークではおおよそ**バックアップ展開後サイズ（非圧縮）分の空き**が必要。
+不足時は復元がエラーになり、退避内容は書き戻される。アップロード上限の既定は
+32GiB（環境変数`PHOTOFINDER_BACKUP_MAX_UPLOAD_BYTES`で変更、0以下で無制限）。
+
+**途中中断時**: 復元中にコンテナが落ちた場合、次回起動時に
+`data/backup/RESTORE_IN_PROGRESS` または「`photofinder.db`が無く
+`before_restore_*`だけがある」状態を検知し、最新の退避から自動で書き戻す。
+手動で直す場合は `data/backup/before_restore_<timestamp>/` 内のファイルを
+`data/` 直下へ戻す。
+
 **フォールバック: docker volumeを「一時コンテナ+tar」で丸ごと移す方法**
 (実機で動作確認済み)。ライブラリが非常に大きく、ブラウザ経由のzip
 アップロードより生の`tar`/`scp`の方が確実な場合に使う。volume名は
@@ -177,17 +189,17 @@ docker compose --profile cpu down   # -v は付けない
 docker run --rm \
   -v photofinder_photofinder_data:/from \
   -v "$(pwd)":/backup \
-  alpine tar czf /backup/pf2_data_backup.tar.gz -C /from .
+  alpine tar czf /backup/photofinder_data_backup.tar.gz -C /from .
 ```
 
-`pf2_data_backup.tar.gz`をUSBメモリ・scp等で新環境に転送し、**新環境で復元**:
+`photofinder_data_backup.tar.gz`をUSBメモリ・scp等で新環境に転送し、**新環境で復元**:
 
 ```bash
 docker volume create photofinder_photofinder_data
 docker run --rm \
   -v photofinder_photofinder_data:/to \
   -v "$(pwd)":/backup \
-  alpine tar xzf /backup/pf2_data_backup.tar.gz -C /to
+  alpine tar xzf /backup/photofinder_data_backup.tar.gz -C /to
 docker compose --profile cpu up -d
 ```
 

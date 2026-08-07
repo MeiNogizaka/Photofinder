@@ -297,8 +297,9 @@ images/{xxhash}.webp # 1600pxプレビュー (オリジナルではない。GPS/
 `vectors.faiss`・`poi.db`（+sidecar）・`species_bank.npz`・`color_bank.npz`・`thumbs/`・
 `previews/`はそのままコピー、`backup_manifest.json`同梱）をzipでダウンロード返却する。
 `tmp/`（Xアーカイブ取り込みの一時領域）と`backup/`（退避先ディレクトリ自身）は対象外。
-スキャン実行中は409（DB/FAISS/サムネが異なる時点で混在した「ちぐはぐな」バックアップに
-なるのを避けるため）。
+スキャン実行中、または別のバックアップ/復元が実行中は409（DB/FAISS/サムネが異なる時点で
+混在した「ちぐはぐな」バックアップになるのを避けるため。作成中は内部ロックで
+`GET /index/status` の `backup_busy=true` になる）。
 
 ## POST /backup/full-restore
 
@@ -307,19 +308,25 @@ multipart/form-data、`file`にバックアップzip（`POST /backup/full`で作
 バックグラウンドスレッドに渡し、即座に`{"started": true}`を返す。進捗は
 `GET /backup/full-restore-status`をポーリングする。
 
-処理順序: ①アップロードされたzipを検証（`backup_manifest.json`/`photofinder.db`の存在、
-全メンバーの展開先パスが`data/`配下に収まること、絶対パス/シンボリックリンクのメンバーが
-無いこと — 検証に失敗した場合、ライブデータには一切触れない）②現在のライブデータを
-`data/backup/before_restore_<timestamp>/`へ**rename**で退避（コピーではないため瞬時・
-追加ディスク不要。直前の退避世代は上書き前に削除、1世代のみ保持）③zipを`data/`へ展開
-④成功したらプロセスを終了し、Dockerの`restart: unless-stopped`ポリシーによる再起動を待つ
-（`vectors.faiss`はプロセス起動時に一度だけメモリへ読み込まれ、稼働中の差し替えは反映
-されないため、`/api/shutdown`と同じ「差し替え→即終了→再起動時に開き直す」パターンに乗る）。
-③が失敗した場合は②の退避内容を書き戻し、プロセスは再起動せずそのまま動作を続ける。
+処理順序: ①受付時に排他ロックを取り `phase=uploading`（この時点からスキャン開始等を拒否）
+②zipを検証（`backup_manifest.json` の `format_version`、`photofinder.db` の存在、
+メンバーが allowlist — DB/オプションファイル/`thumbs|previews` 配下 — のみ、展開先が
+`data/` 配下に収まること、絶対パス/シンボリックリンク禁止。失敗時はライブデータに触れない）
+③展開に必要な空き容量（非圧縮合計+マージン）を確認
+④`data/backup/RESTORE_IN_PROGRESS` マーカーを書き、ライブデータを
+`data/backup/before_restore_<timestamp>/`へ**rename**で退避（コピーではないため瞬時。
+ステージング自体は追加ディスク不要だが、展開中は旧ツリー+新ツリーが同居するため
+ピーク空き容量はおおよそ非圧縮サイズ分が必要。新ステージ完了後に直前世代のみ削除）
+⑤zipを`data/`へ展開 ⑥成功したらマーカーを消しプロセスを終了し、Dockerの
+`restart: unless-stopped`ポリシーによる再起動を待つ（`vectors.faiss`はプロセス起動時に
+一度だけメモリへ読み込まれるため）。⑤が失敗した場合は④の退避を書き戻しマーカーを消し、
+プロセスは再起動せずそのまま動作を続ける。途中でプロセスが死んだ場合は次回起動時に
+`recover_incomplete_restore` がマーカー/`before_restore_*`を見て自動書き戻しする
+（空の `photofinder.db` を新規作成しない）。
 
-エラーはこのエンドポイント自身のレスポンスではなく`GET /backup/full-restore-status`の
-`phase=="error"`/`error`フィールドで返る（スキャン実行中の409を除く。既に別の復元が
-実行中なら`{"started": false, "reason": "restore already running"}`）。
+アップロードサイズ上限は環境変数 `PHOTOFINDER_BACKUP_MAX_UPLOAD_BYTES`（既定 32GiB、
+0以下で無制限）。超過時は413。スキャン実行中の409、既にバックアップ/復元実行中なら
+`{"started": false, "reason": "backup or restore already running"}`。
 
 ## GET /backup/full-restore-status
 
@@ -327,9 +334,9 @@ multipart/form-data、`file`にバックアップzip（`POST /backup/full`で作
 { "running": false, "phase": "done", "error": null }
 ```
 
-`phase`: `idle` | `validating` | `staging` | `extracting` | `done` | `error`。`done`を
-確認したフロントは`GET /index/status`を1秒間隔でポーリングし、応答が返るようになった時点
-（プロセス再起動完了）で画面をリロードする。
+`phase`: `idle` | `uploading` | `validating` | `staging` | `extracting` | `done` | `error`。
+`done`を確認したフロントは`GET /index/status`を1秒間隔でポーリングし、応答が返るように
+なった時点（プロセス再起動完了）で画面をリロードする。
 
 ## GET /index/status
 

@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
+from . import backup as backup_mod
 from . import fts, ml, scanner
 from . import __version__
 from .db import open_db
@@ -39,6 +40,18 @@ RRF_K = 60
 # マネージャを開けないため、reveal系エンドポイント/UIボタンをここで判定して
 # 出し分ける (GET /api/index/status の in_docker フィールド経由でフロントに伝える)
 IN_DOCKER = os.environ.get("PHOTOFINDER_DOCKER") == "1"
+# フルバックアップzipのアップロード上限 (既定 32GiB)。大きいサムネライブラリ向け。
+# 0 以下で無制限。環境変数 PHOTOFINDER_BACKUP_MAX_UPLOAD_BYTES で上書き可
+_BACKUP_MAX_UPLOAD = int(os.environ.get(
+    "PHOTOFINDER_BACKUP_MAX_UPLOAD_BYTES", str(32 * 1024 ** 3)))
+
+# 中断された復元があれば open_db より前に退避を書き戻す (空DB新規作成を防ぐ)
+_recovered = backup_mod.recover_incomplete_restore(DATA_DIR)
+if _recovered:
+    log.warning("startup recovery: %s", _recovered)
+_legacy_n = backup_mod.cleanup_legacy_db_snapshots(DATA_DIR)
+if _legacy_n:
+    log.info("removed %d legacy weekly DB snapshot(s) under backup/", _legacy_n)
 
 app = FastAPI(
     title="PhotoFinder", version=__version__,
@@ -685,6 +698,8 @@ async def archive_import(
     # 一つのロックで直列化)。STATUS.running だけを見て後で書き込むと、2つの
     # 同時アップロードが両方このチェックを通過し、共有の一時ファイルを取り合う
     # 競合状態になりうるため
+    if backup_mod.is_busy():
+        return {"started": False, "reason": "backup or restore in progress"}
     if not ai.try_acquire():
         return {"started": False, "reason": "import already running"}
     # リクエストごとに一意な一時ファイル名にする (ロックで直列化した後も、
@@ -820,6 +835,8 @@ def add_root(body: dict = Body(...)):
     path = (body.get("path") or "").strip()
     if not path or not Path(path).is_dir():
         raise HTTPException(422, f"folder not found: {path}")
+    # 復元中に open_db が空DBを作る競合を避けるため、busy 中はフォルダ追加自体を拒否
+    _reject_if_backup_busy()
     ext_filter = body.get("ext_filter", "jpg;jpeg;png;heic")
     recursive = 0 if body.get("recursive") is False else 1  # 既定は再帰
     with _db_write:
@@ -934,7 +951,14 @@ def _start_scan_thread(root_id: int | None = None, wait: bool = False) -> None:
 
 @app.on_event("startup")
 def scan_on_startup():
-    """スキャンは起動時 (本設定で無効化可) と手動ボタンのみ (ユーザ決定の仕様)。"""
+    """スキャンは起動時 (本設定で無効化可) と手動ボタンのみ (ユーザ決定の仕様)。
+
+    バックアップ/復元の排他ロックが残っていることは通常あり得ないが、
+    念のため is_busy のときは起動スキャンをスキップする。
+    """
+    if backup_mod.is_busy():
+        log.warning("skipping startup scan: backup/restore busy")
+        return
     if get_setting("scan_on_startup", "1") == "1":
         _start_scan_thread()
 
@@ -945,25 +969,39 @@ BACKUP_TMP_DIR = DATA_DIR / "tmp"  # Xアーカイブ取り込みと共用の一
 BACKUP_UPLOAD_CHUNK = 1 << 20
 
 
+def _reject_if_backup_busy() -> None:
+    """スキャン開始など、フルバックアップ/復元と同時に走らせたくない操作のゲート。"""
+    if backup_mod.is_busy():
+        op = backup_mod.current_op() or "backup"
+        raise HTTPException(
+            409, f"{op} in progress - try again after it finishes")
+
+
 @app.post("/api/backup/full")
 def backup_full():
     """データディレクトリ全体 (DB+FAISS索引+サムネ/プレビュー+poi.db等) をzipで
     ダウンロード返却する。/api/export/dataset と同じ「一時ファイルに書いてから
     FileResponse+BackgroundTaskで削除」パターン (backup.py 参照)。
+
+    作成中は is_busy() が真になりスキャン開始を拒否する (FAISS/thumbs が
+    途中で書き換わってちぐはぐなzipになるのを防ぐ)。
     """
-    from .backup import build_full_backup
     if scanner.STATUS.running:
         raise HTTPException(409, "scan running - try again after it finishes")
+    if not backup_mod.try_acquire("backup"):
+        raise HTTPException(409, "backup or restore already in progress")
     vstore.save()  # メモリ上の最新FAISS索引をディスクへ反映してからzipに含める
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     fd, tmp_name = tempfile.mkstemp(prefix=f"photofinder-backup-{ts}-", suffix=".zip")
     os.close(fd)
     out_path = Path(tmp_name)
     try:
-        build_full_backup(DATA_DIR, out_path)
+        backup_mod.build_full_backup(DATA_DIR, out_path)
     except Exception as ex:
         out_path.unlink(missing_ok=True)
         raise HTTPException(500, f"backup failed: {ex}")
+    finally:
+        backup_mod.release()
     return FileResponse(
         out_path, media_type="application/zip", filename=f"photofinder-backup-{ts}.zip",
         background=BackgroundTask(out_path.unlink, missing_ok=True),
@@ -981,32 +1019,44 @@ async def backup_full_restore(file: UploadFile = File(...)):
     をポーリングする。復元成功後、このスレッドがプロセス終了をスケジュールし
     Docker の restart policy による再起動を待つ (backup.py の run_full_restore
     自体は os._exit を呼ばない — プロセス管理はここ main.py の責務)。
+
+    try_acquire 時点で STATUS.phase=uploading になり、スキャン開始は is_busy()
+    で拒否される。アップロードサイズは PHOTOFINDER_BACKUP_MAX_UPLOAD_BYTES
+    (既定 32GiB、0 以下で無制限) で上限する。
     """
-    from . import backup
     if scanner.STATUS.running:
         raise HTTPException(409, "scan running - try again after it finishes")
-    if not backup.try_acquire():
-        return {"started": False, "reason": "restore already running"}
+    if not backup_mod.try_acquire("restore"):
+        return {"started": False, "reason": "backup or restore already running"}
     tmp_path = BACKUP_TMP_DIR / f"full_restore_{uuid.uuid4().hex}.zip"
     try:
         BACKUP_TMP_DIR.mkdir(parents=True, exist_ok=True)
+        written = 0
         with open(tmp_path, "wb") as f:
             while chunk := await file.read(BACKUP_UPLOAD_CHUNK):
+                written += len(chunk)
+                if _BACKUP_MAX_UPLOAD > 0 and written > _BACKUP_MAX_UPLOAD:
+                    raise HTTPException(
+                        413,
+                        f"backup upload exceeds limit "
+                        f"({_BACKUP_MAX_UPLOAD} bytes); set "
+                        f"PHOTOFINDER_BACKUP_MAX_UPLOAD_BYTES to raise it",
+                    )
                 f.write(chunk)
 
         def run():
             try:
-                backup.run_full_restore(DATA_DIR, tmp_path, db)
+                backup_mod.run_full_restore(DATA_DIR, tmp_path, db)
             finally:
                 tmp_path.unlink(missing_ok=True)
-            if backup.STATUS.phase == "done":
+            if backup_mod.STATUS.phase == "done":
                 def _exit_soon():
                     time.sleep(0.3)
                     os._exit(0)
                 threading.Thread(target=_exit_soon, daemon=True).start()
         threading.Thread(target=run, daemon=True).start()
     except Exception:
-        backup.release()
+        backup_mod.release()
         tmp_path.unlink(missing_ok=True)
         raise
     return {"started": True}
@@ -1014,9 +1064,7 @@ async def backup_full_restore(file: UploadFile = File(...)):
 
 @app.get("/api/backup/full-restore-status")
 def backup_full_restore_status():
-    from . import backup
-    return backup.STATUS.snapshot()
-
+    return backup_mod.STATUS.snapshot()
 
 @app.post("/api/export/dataset")
 def export_dataset(body: dict = Body(default={})):
@@ -1285,6 +1333,8 @@ def start_scan(body: dict = Body(default={})):
     """手動スキャン開始。root_id 指定でそのフォルダだけ再スキャン。"""
     if scanner.STATUS.running:
         return {"started": False, "reason": "scan already running"}
+    if backup_mod.is_busy():
+        return {"started": False, "reason": "backup or restore in progress"}
     root_id = body.get("root_id")
     if root_id is not None:
         if not db.execute("SELECT 1 FROM roots WHERE id=?", (root_id,)).fetchone():
@@ -1310,12 +1360,14 @@ def _rebuild_vectors() -> dict:
     """未削除写真の id 集合でベクトル索引を作り直す (重複・不要ベクトル除去)。
 
     スキャン中は faiss_pending flush と競合し未反映ベクトルを失いうるため実行しない。
-    バックアップの付随オプションからも呼ばれるため、ここでは例外にせず
-    スキップを示す dict を返す（バックアップ自体は成功させたいため）。
+    バックアップ/復元中も FAISS ファイルが rename/展開されるため実行しない。
+    ここでは例外にせずスキップを示す dict を返す。
     呼び出し元の意図次第で 409 にするか無視するかを選べる。
     """
     if scanner.STATUS.running:
         return {"skipped": True, "reason": "scan running"}
+    if backup_mod.is_busy():
+        return {"skipped": True, "reason": "backup or restore in progress"}
     valid = {r["id"] for r in db.execute("SELECT id FROM photos WHERE deleted=0")}
     return vstore.rebuild(valid)
 
@@ -1324,7 +1376,7 @@ def _rebuild_vectors() -> dict:
 def rebuild_vectors():
     result = _rebuild_vectors()
     if result.get("skipped"):
-        raise HTTPException(409, "scan running - try again after it finishes")
+        raise HTTPException(409, f"{result['reason']} - try again after it finishes")
     return result
 
 
@@ -1347,6 +1399,9 @@ def index_status():
         },
         # コンテナ実行かどうか。フロントはこれでreveal/エクスプローラ関連UIの表示を切り替える
         "in_docker": IN_DOCKER,
+        # フルバックアップ作成中または復元中。UIがスキャン状態と独立してボタンを止められる
+        "backup_busy": backup_mod.is_busy(),
+        "backup_op": backup_mod.current_op(),
     }
 
 

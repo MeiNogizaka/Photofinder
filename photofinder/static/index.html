@@ -408,7 +408,11 @@
   <p class="lbl" style="margin-top:16px">バックアップ / 復元</p>
   <p style="font-size:11px; color:var(--ink2); margin:0 0 8px">
     DB・検索インデックス・サムネ/プレビュー・場所データ (poi.db) を含むデータ
-    ディレクトリ全体をzipでダウンロード/復元します
+    ディレクトリ全体をzipでダウンロード/復元します。復元は成功後にアプリを
+    再起動します。復元中はスキャン等の書き込み操作はできません。ピーク時の
+    空き容量はおおよそバックアップ展開後サイズ分（非圧縮）が必要です。
+    復元が途中で中断された場合、次回起動時に
+    <code>data/backup/before_restore_*</code> から自動で書き戻します
   </p>
   <div class="btns">
     <button id="setBackupFull" class="ghost" style="font-size:11.5px">バックアップをダウンロード</button>
@@ -1865,18 +1869,32 @@ $("setBackupFull").onclick = async () => {
   }
 };
 
+// 復元操作中フラグ。index/status の2秒ポーリングがスキャン未実行のときに
+// 復元ボタンを再有効化してしまうのを防ぐ (ダウンロード側と同様、自身で管理する)
+let restoreInProgress = false;
+
 async function pollBackupRestore() {
-  const s = await api("/backup/full-restore-status");
-  if (s.running) {
-    $("backupRestoreStatus").textContent =
-      {validating: "検証中…", staging: "退避中…", extracting: "展開中…"}[s.phase] || "処理中…";
-    setTimeout(pollBackupRestore, 1000);
-  } else if (s.phase === "error") {
-    $("backupRestoreStatus").textContent = "エラー: " + s.error;
-    $("setBackupRestore").disabled = false;
-  } else if (s.phase === "done") {
-    $("backupRestoreStatus").textContent = "復元中です。アプリを再起動しています…";
-    waitForRestartAndReload();
+  try {
+    const s = await api("/backup/full-restore-status");
+    if (s.running || s.phase === "uploading") {
+      $("backupRestoreStatus").textContent =
+        {uploading: "アップロード受付済み…", validating: "検証中…",
+         staging: "退避中…", extracting: "展開中…"}[s.phase] || "処理中…";
+      setTimeout(pollBackupRestore, 1000);
+    } else if (s.phase === "error") {
+      $("backupRestoreStatus").textContent = "エラー: " + (s.error || "不明なエラー");
+      restoreInProgress = false;
+      $("setBackupRestore").disabled = false;
+    } else if (s.phase === "done") {
+      $("backupRestoreStatus").textContent = "復元中です。アプリを再起動しています…";
+      waitForRestartAndReload();
+    } else {
+      // idle 等 — スレッド未起動の瞬間に拾った場合は再ポーリング
+      if (restoreInProgress) setTimeout(pollBackupRestore, 500);
+    }
+  } catch (err) {
+    // 再起動直後は接続拒否になりうる。復元完了後の再起動待ちと兼用
+    if (restoreInProgress) setTimeout(pollBackupRestore, 1000);
   }
 }
 
@@ -1885,19 +1903,35 @@ $("setBackupRestore").onclick = async () => {
   if (!file) { alert("バックアップzipを選択してください"); return; }
   if (!confirm(
     "このファイルで復元しますか?\n現在のデータは自動で退避されますが、" +
-    "これ以降に追加・変更した内容は失われます。復元後アプリが再起動します。")) return;
+    "これ以降に追加・変更した内容は失われます。\n" +
+    "復元後アプリが再起動します。途中で中断された場合は次回起動時に\n" +
+    "data/backup/before_restore_* から自動復旧を試みます。")) return;
+  restoreInProgress = true;
   $("setBackupRestore").disabled = true;
   $("backupRestoreStatus").textContent = "アップロード中…";
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch("/api/backup/full-restore", {method: "POST", body: form});
-  const d = await res.json();
-  if (!d.started) {
-    $("backupRestoreStatus").textContent = "開始できませんでした: " + (d.reason || "");
+  try {
+    const res = await fetch("/api/backup/full-restore", {method: "POST", body: form});
+    let d = null;
+    try { d = await res.json(); } catch (_) { d = null; }
+    if (!res.ok) {
+      const detail = (d && (d.detail || d.reason)) || ("HTTP " + res.status);
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    }
+    if (!d || !d.started) {
+      $("backupRestoreStatus").textContent =
+        "開始できませんでした: " + ((d && d.reason) || "不明な理由");
+      restoreInProgress = false;
+      $("setBackupRestore").disabled = false;
+      return;
+    }
+    pollBackupRestore();
+  } catch (err) {
+    $("backupRestoreStatus").textContent = "エラー: " + err.message;
+    restoreInProgress = false;
     $("setBackupRestore").disabled = false;
-    return;
   }
-  pollBackupRestore();
 };
 $("setDatasetExport").onclick = async () => {
   $("setDatasetExport").disabled = true;
@@ -2271,12 +2305,14 @@ setInterval(async () => {
     $("statusDot").className = "dot" + (s.running ? " busy" : "");
     $("cancelBtn").hidden = !s.running || s.cancel_requested;
     $("scanBtn").hidden = s.running;
-    // スキャン中は復元を無効化 (バックエンドも409で拒否するが、押せる状態に
-    // 見せて後から拒否されるより先にグレーアウトする方が親切)。ダウンロード
-    // ボタンは自身のクリックハンドラでのみ disabled を管理する (このポーリングで
-    // 触ると「作成中…」の間に再度有効化されてしまう) ため対象外
-    $("setBackupRestore").disabled = s.running;
-    $("setBackupRestore").title = s.running ? "スキャン中は復元できません" : "";
+    // スキャン中・バックアップ/復元中は復元を無効化。restoreInProgress も見る
+    // (復元中は s.running がスキャン状態なので false のまま、status の
+    // backup_busy かローカルフラグで抑止しないとボタンが再有効化される)。
+    // ダウンロードボタンは自身のクリックハンドラでのみ disabled を管理する
+    const backupBusy = !!s.backup_busy || restoreInProgress;
+    $("setBackupRestore").disabled = s.running || backupBusy;
+    $("setBackupRestore").title = s.running ? "スキャン中は復元できません"
+      : backupBusy ? "バックアップ/復元の処理中です" : "";
 
     if (s.running && s.phase === "extract" && s.total > 0) {
       $("scanProgress").hidden = false;

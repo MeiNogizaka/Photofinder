@@ -35,6 +35,14 @@ app2/photofinder (0.6.1) からのフォーク。Windows exe配布を廃止しDo
        メモリへ読み込まれ、稼働中の差し替えが反映されないため)。設定の
        backup_auto を廃止 (schema v7、既存DBの当該行は起動時マイグレーション
        で削除)
+0.3.1: フルバックアップ/復元の安全対策。バックアップ・復元の排他ロックを
+       スキャン/ベクトル再構築/アーカイブ取込と共有し、復元中の空DB作成
+       競合を防止。RESTORE_IN_PROGRESS マーカーと起動時
+       recover_incomplete_restore で途中クラッシュ後の自動復旧。ステージング
+       途中失敗の部分ロールバック、format_version/メンバーallowlist検証、
+       展開前の空き容量チェック、アップロードサイズ上限
+       (PHOTOFINDER_BACKUP_MAX_UPLOAD_BYTES、既定32GiB)、UIの復元中ボタン
+       再有効化防止とエラー表示改善、旧週次スナップショットの起動時掃除
 """
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
