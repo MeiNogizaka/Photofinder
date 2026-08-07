@@ -143,6 +143,7 @@ erDiagram
 | v4 | roots.recursive 追加（フォルダごとに再帰/直下のみを切替） |
 | v5 | photo_posts 追加（X投稿リンク・重複投稿警告機能。ALTER不要のCREATE TABLE IF NOT EXISTSのみのため _migrate() への追加コードなし） |
 | v6 | photo_posts.platform/platform_label 追加（X以外のSNS投稿リンクにも対応）。photos.exported_at 追加（書き出し済みマーク表示用） |
+| v7 | app_settings から backup_auto を削除（週次自動スナップショットをフルバックアップ/復元に置き換え、参照されなくなったため） |
 
 ER 図との差分に気づいたら schema.sql を正としてください。
 

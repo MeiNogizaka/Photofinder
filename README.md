@@ -96,7 +96,7 @@ photofinder/
 │   ├── ocr.py                 ← RapidOCR 日本語 OCR
 │   ├── geo.py / poi_fetch.py  ← 逆ジオコーディング・OSM POI 取得/検索/手動管理
 │   ├── export.py              ← 切り出し/透かし/メタデータ除去での書き出し（RAW対応・Linux CJKフォント）
-│   ├── backup.py              ← DB スナップショット（VACUUM INTO）
+│   ├── backup.py              ← フルバックアップ作成/復元（DB+FAISS+サムネ等）
 │   └── static/index.html      ← フロントエンド（ビルド不要のバニラ JS、単一ファイル）
 ├── tools/
 │   ├── download_models.py    ← SigLIP/YOLO/OCR モデルの取得（Dockerのmodel-fetchステージから利用）
@@ -268,7 +268,7 @@ python3 -m venv .venv
 - **差分インデックス**: `(path, size, mtime)` 一致ならスキップ。変更検知時のみ xxHash 再計算。ハッシュ一致（移動/リネーム）はレコード付け替えのみで ML 再処理なし。
 - **スキャンのタイミング**: 起動時（設定で無効化可）と手動ボタンのみ。watchdog によるリアルタイム監視・定期スキャンは実装の単純さを優先して不採用。
 - **プライバシー**: 既定は完全ローカル。クラウド OCR / オンライン逆ジオコーディングは設定で明示オプトイン。**認証機構は無く**、公開範囲は`docker-compose.yml`の`ports:`マッピングで制御する（既定は127.0.0.1のみ、詳細はdocs/docker.md）。
-- **バックアップ**: 週次自動スナップショット（`VACUUM INTO`・3世代・起動時チェック、設定で切替）＋手動作成。FAISS・サムネは DB から再構築可能なので最悪 DB だけ守れば良い（Dockerでは`data`named volume）。
+- **バックアップ**: 設定画面から手動でフルバックアップ（DB・FAISS索引・サムネ/プレビュー・poi.db等、データディレクトリ全体）をzipでダウンロード/復元できる。復元前にライブデータを自動退避（直前1世代）してから展開し、復元後はプロセスを終了してDockerのrestart policyで再起動する。自動の週次スナップショットは廃止済み（Dockerでは`data`named volume）。
 
 ## 参考にした類似ソリューションの設計思想
 

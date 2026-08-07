@@ -162,6 +162,13 @@ def _migrate(db: sqlite3.Connection) -> None:
             db.execute("ALTER TABLE photos ADD COLUMN exported_at TEXT")
         db.execute("UPDATE schema_meta SET value='6' WHERE key='schema_version'")
         db.commit()
+        version = 6
+    if version and version < 7:
+        # v6 → v7: backup_auto (週次自動スナップショット設定) を削除。フル
+        # バックアップ/復元への置き換えで参照されなくなったため後始末する
+        db.execute("DELETE FROM app_settings WHERE key='backup_auto'")
+        db.execute("UPDATE schema_meta SET value='7' WHERE key='schema_version'")
+        db.commit()
 
 
 def _has(db: sqlite3.Connection, table: str) -> bool:

@@ -871,7 +871,7 @@ def delete_root(root_id: int):
 # ================================================================ settings ==
 
 # 真偽値として扱う設定キーの一覧 (PATCH で受け付けるキーもここで制限)
-BOOL_SETTINGS = {"scan_on_startup", "backup_auto"}
+BOOL_SETTINGS = {"scan_on_startup"}
 
 
 def get_setting(key: str, default: str = "") -> str:
@@ -939,88 +939,83 @@ def scan_on_startup():
         _start_scan_thread()
 
 
-@app.on_event("startup")
-def backup_on_startup():
-    """自動バックアップ: 起動時に前回から7日以上経過していればスナップショット。"""
-    from .backup import auto_backup_if_due
-    if get_setting("backup_auto", "1") == "1":
-        threading.Thread(
-            target=auto_backup_if_due, args=(DATA_DIR,), daemon=True
-        ).start()
-
-
 # ================================================================ backup ====
 
-@app.get("/api/backup/status")
-def backup_status():
-    from .backup import INTERVAL_DAYS, KEEP_GENERATIONS, list_snapshots
-    return {
-        "enabled": get_setting("backup_auto", "1") == "1",
-        "interval_days": INTERVAL_DAYS,
-        "keep_generations": KEEP_GENERATIONS,
-        "snapshots": list_snapshots(DATA_DIR),
-    }
+BACKUP_TMP_DIR = DATA_DIR / "tmp"  # Xアーカイブ取り込みと共用の一時領域
+BACKUP_UPLOAD_CHUNK = 1 << 20
 
 
-@app.post("/api/backup/snapshot")
-def backup_snapshot(body: dict = Body(default={})):
-    from .backup import snapshot
-    try:
-        result = snapshot(DATA_DIR)  # 専用接続で実行するため _db_write 不要
-    except Exception as ex:
-        raise HTTPException(500, f"backup failed: {ex}")
-    if body.get("rebuild"):  # バックアップ時オプション: ベクトル索引の再構築
-        result["rebuild"] = _rebuild_vectors()
-    return result
-
-
-@app.post("/api/backup/restore")
-def backup_restore(body: dict = Body(...)):
-    """指定したスナップショットで photofinder.db を復元する。
-
-    誤って選んでも1つ前の状態に戻せるよう、復元前に現在の状態の安全
-    スナップショットを自動で作成する。復元後はプロセスを終了し、Dockerの
-    restart policy (docker-compose.yml の restart: unless-stopped) による
-    再起動を待つ — 生きたWALモード接続を持ったままDBファイルを差し替えるのは
-    危険なため、/api/shutdown と同じ「差し替え→即終了→再起動時に新しい
-    状態で開き直す」パターンに乗る。復元直後はFAISS索引が古いDBの内容と
-    ズレうるが、_hydrate() は存在しないphoto_idを黙ってフィルタするだけで
-    エラーにはならない (main.py 参照) ため自動再構築はしない — 気になる
-    場合は再起動後に設定画面から「ベクトル索引を再構築」を実行すればよい。
+@app.post("/api/backup/full")
+def backup_full():
+    """データディレクトリ全体 (DB+FAISS索引+サムネ/プレビュー+poi.db等) をzipで
+    ダウンロード返却する。/api/export/dataset と同じ「一時ファイルに書いてから
+    FileResponse+BackgroundTaskで削除」パターン (backup.py 参照)。
     """
-    from .backup import restore, snapshot, validate_snapshot_path
+    from .backup import build_full_backup
     if scanner.STATUS.running:
         raise HTTPException(409, "scan running - try again after it finishes")
-    path = body.get("path")
-    if not path:
-        raise HTTPException(422, "path is required")
-    # 復元先を先に検証してから安全スナップショットを作る。無効なリクエストの
-    # たびに無駄なスナップショットが積み上がるのを防ぐため
+    vstore.save()  # メモリ上の最新FAISS索引をディスクへ反映してからzipに含める
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    fd, tmp_name = tempfile.mkstemp(prefix=f"photofinder-backup-{ts}-", suffix=".zip")
+    os.close(fd)
+    out_path = Path(tmp_name)
     try:
-        validate_snapshot_path(DATA_DIR, Path(path))
-    except ValueError as ex:
-        raise HTTPException(403, str(ex))
-    except FileNotFoundError as ex:
-        raise HTTPException(404, str(ex))
-    try:
-        safety = snapshot(DATA_DIR)
+        build_full_backup(DATA_DIR, out_path)
     except Exception as ex:
-        raise HTTPException(500, f"safety snapshot before restore failed: {ex}")
-    try:
-        result = restore(DATA_DIR, Path(path), db)
-    except ValueError as ex:
-        raise HTTPException(403, str(ex))
-    except FileNotFoundError as ex:
-        raise HTTPException(404, str(ex))
-    except Exception as ex:
-        raise HTTPException(500, f"restore failed: {ex}")
+        out_path.unlink(missing_ok=True)
+        raise HTTPException(500, f"backup failed: {ex}")
+    return FileResponse(
+        out_path, media_type="application/zip", filename=f"photofinder-backup-{ts}.zip",
+        background=BackgroundTask(out_path.unlink, missing_ok=True),
+    )
 
-    def _exit_soon():
-        time.sleep(0.3)
-        os._exit(0)
-    threading.Thread(target=_exit_soon, daemon=True).start()
-    return {"ok": True, "safety_snapshot": safety["out_path"],
-            **result, "restarting": True}
+
+@app.post("/api/backup/full-restore")
+async def backup_full_restore(file: UploadFile = File(...)):
+    """アップロードされたバックアップzipで復元する (/api/archive/import と同じ
+    「チャンクでディスクへ書いてからバックグラウンドスレッドで処理」パターン)。
+
+    アップロード自体はこのリクエストの中で完了させる (multipartボディを受け切る
+    以上避けられない) が、実際の退避/展開はバックグラウンドスレッドに渡して
+    即座に {"started": true} を返す。進捗は GET /api/backup/full-restore-status
+    をポーリングする。復元成功後、このスレッドがプロセス終了をスケジュールし
+    Docker の restart policy による再起動を待つ (backup.py の run_full_restore
+    自体は os._exit を呼ばない — プロセス管理はここ main.py の責務)。
+    """
+    from . import backup
+    if scanner.STATUS.running:
+        raise HTTPException(409, "scan running - try again after it finishes")
+    if not backup.try_acquire():
+        return {"started": False, "reason": "restore already running"}
+    tmp_path = BACKUP_TMP_DIR / f"full_restore_{uuid.uuid4().hex}.zip"
+    try:
+        BACKUP_TMP_DIR.mkdir(parents=True, exist_ok=True)
+        with open(tmp_path, "wb") as f:
+            while chunk := await file.read(BACKUP_UPLOAD_CHUNK):
+                f.write(chunk)
+
+        def run():
+            try:
+                backup.run_full_restore(DATA_DIR, tmp_path, db)
+            finally:
+                tmp_path.unlink(missing_ok=True)
+            if backup.STATUS.phase == "done":
+                def _exit_soon():
+                    time.sleep(0.3)
+                    os._exit(0)
+                threading.Thread(target=_exit_soon, daemon=True).start()
+        threading.Thread(target=run, daemon=True).start()
+    except Exception:
+        backup.release()
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return {"started": True}
+
+
+@app.get("/api/backup/full-restore-status")
+def backup_full_restore_status():
+    from . import backup
+    return backup.STATUS.snapshot()
 
 
 @app.post("/api/export/dataset")

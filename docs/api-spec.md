@@ -33,7 +33,7 @@
 | POST | `/index/cancel` | 実行中スキャンに停止を要求（未処理分は次回スキャンで自動再開） |
 | GET | `/index/status` | 進捗スナップショット（`total`・`eta_seconds`・`rate_per_min`・`cancel_requested`・`cancelled` 等。UI は 2 秒ポーリング） |
 | POST | `/index/rebuild-vectors` | ベクトル索引を再構築（重複・削除済みベクトルを除去） |
-| GET | `/settings` / PATCH `/settings` | アプリ設定（`scan_on_startup`, `backup_auto`）。未設定キーは全て既定値 `true` として返る |
+| GET | `/settings` / PATCH `/settings` | アプリ設定（`scan_on_startup`）。未設定キーは全て既定値 `true` として返る |
 | POST | `/shutdown` | アプリを終了する（設定画面の「終了」ボタンから呼ばれる。応答を返してから `os._exit()`。Dockerでは`docker stop`と実質等価だが、UIからの明示終了手段として維持） |
 | GET | `/geo/poi-status` | OSM POI データの取得状況（県別件数・取得日、`pref="manual"` はカスタム地点） |
 | POST | `/geo/refresh-poi` | POI 更新後、GPS 持ち全写真へ場所名を再適用（画像再解析なし） |
@@ -48,9 +48,9 @@
 | DELETE | `/geo/poi/{id}` | 個別 POI（カスタム/取得済み問わず）を削除 |
 | GET | `/export/options` | 書き出しダイアログのフォント選択肢一覧（`export.FONTS` が定義元） |
 | POST | `/export/dataset` | 人手タグ付け済み写真をJSONL+画像zipで書き出す（教師/評価データセット化。`{include_negatives?, include_bird_detail?}`、既定どちらもtrue） |
-| GET | `/backup/status` | バックアップ状況（自動有効/無効・スナップショット一覧） |
-| POST | `/backup/snapshot` | DB スナップショット即時作成（`{rebuild:true}` でベクトル索引も再構築） |
-| POST | `/backup/restore` | `{path}` で指定したスナップショットに復元（下記参照） |
+| POST | `/backup/full` | データディレクトリ全体（DB+FAISS索引+サムネ/プレビュー+poi.db等）をzipでダウンロード（下記参照） |
+| POST | `/backup/full-restore` | アップロードしたバックアップzipで復元開始（バックグラウンド実行、multipart。下記参照） |
+| GET | `/backup/full-restore-status` | 復元の進捗（`running`・`phase`・`error`） |
 | POST | `/archive/import` | Xデータアーカイブ(zip)をアップロードし取り込み開始（バックグラウンド実行、multipart。`date_from`/`date_to` (YYYY-MM-DD、任意) で投稿日を絞り込み可） |
 | GET | `/archive/import-status` | 取り込み進捗・レビュー待ち候補一覧（`phase`, `done`/`total`, `candidates[]`） |
 | POST | `/archive/import/confirm` | レビューで確認した候補を `photo_posts` へ確定登録 `{accepted:[{photo_id,tweet_id}]}` |
@@ -291,28 +291,45 @@ images/{xxhash}.webp # 1600pxプレビュー (オリジナルではない。GPS/
 （種名タグ名で突き合わせ、`bird_ids.confirmed`は既存UIから更新されない別カラムのため
 使わない）でゲートしたもの。
 
-## POST /backup/restore
+## POST /backup/full
+
+データディレクトリ全体（`photofinder.db`は`VACUUM main INTO`で圧縮しながら書き出し、
+`vectors.faiss`・`poi.db`（+sidecar）・`species_bank.npz`・`color_bank.npz`・`thumbs/`・
+`previews/`はそのままコピー、`backup_manifest.json`同梱）をzipでダウンロード返却する。
+`tmp/`（Xアーカイブ取り込みの一時領域）と`backup/`（退避先ディレクトリ自身）は対象外。
+スキャン実行中は409（DB/FAISS/サムネが異なる時点で混在した「ちぐはぐな」バックアップに
+なるのを避けるため）。
+
+## POST /backup/full-restore
+
+multipart/form-data、`file`にバックアップzip（`POST /backup/full`で作成したもの）を指定。
+アップロード自体はリクエスト内でチャンク単位にディスクへ書き切るが、実際の検証/退避/展開は
+バックグラウンドスレッドに渡し、即座に`{"started": true}`を返す。進捗は
+`GET /backup/full-restore-status`をポーリングする。
+
+処理順序: ①アップロードされたzipを検証（`backup_manifest.json`/`photofinder.db`の存在、
+全メンバーの展開先パスが`data/`配下に収まること、絶対パス/シンボリックリンクのメンバーが
+無いこと — 検証に失敗した場合、ライブデータには一切触れない）②現在のライブデータを
+`data/backup/before_restore_<timestamp>/`へ**rename**で退避（コピーではないため瞬時・
+追加ディスク不要。直前の退避世代は上書き前に削除、1世代のみ保持）③zipを`data/`へ展開
+④成功したらプロセスを終了し、Dockerの`restart: unless-stopped`ポリシーによる再起動を待つ
+（`vectors.faiss`はプロセス起動時に一度だけメモリへ読み込まれ、稼働中の差し替えは反映
+されないため、`/api/shutdown`と同じ「差し替え→即終了→再起動時に開き直す」パターンに乗る）。
+③が失敗した場合は②の退避内容を書き戻し、プロセスは再起動せずそのまま動作を続ける。
+
+エラーはこのエンドポイント自身のレスポンスではなく`GET /backup/full-restore-status`の
+`phase=="error"`/`error`フィールドで返る（スキャン実行中の409を除く。既に別の復元が
+実行中なら`{"started": false, "reason": "restore already running"}`）。
+
+## GET /backup/full-restore-status
 
 ```json
-{ "path": "/app/data/backup/photofinder-20260724-143202-255.db" }
+{ "running": false, "phase": "done", "error": null }
 ```
 
-`path`は`GET /backup/status`の`snapshots[].path`のいずれか（`data/backup/`配下のみ許可、
-外は403）。誤って選んでも1つ前に戻せるよう、**復元前に現在の状態の安全スナップショットを
-自動作成**してから復元する。復元は`photofinder.db`をスナップショットファイルで置き換える
-処理で、生きたWALモード接続を持ったまま安全に差し替えるため**復元後にプロセスを終了**し、
-Dockerの`restart: unless-stopped`ポリシーによる再起動を待つ（`/api/shutdown`と同じ
-「差し替え→即終了→再起動時に開き直す」パターン）。
-
-```json
-{ "ok": true, "safety_snapshot": "/app/data/backup/photofinder-20260724-143202-309.db",
-  "restored_from": "/app/data/backup/photofinder-20260724-143202-255.db", "restarting": true }
-```
-
-エラー: スキャン実行中は409、`path`未指定は422、`backup/`配下以外のパスは403、
-存在しないファイルは404。復元直後はFAISS索引が古いDBの内容とズレうるが、検索結果の
-`_hydrate()`は存在しないphoto_idを黙ってフィルタするだけでエラーにはならないため
-自動再構築はしない（気になる場合は`POST /index/rebuild-vectors`を別途呼ぶ）。
+`phase`: `idle` | `validating` | `staging` | `extracting` | `done` | `error`。`done`を
+確認したフロントは`GET /index/status`を1秒間隔でポーリングし、応答が返るようになった時点
+（プロセス再起動完了）で画面をリロードする。
 
 ## GET /index/status
 

@@ -405,23 +405,21 @@
   <p style="font-size:11px; color:var(--ink2); margin:6px 0 0">
     緯度経度は写真詳細の「場所」欄や地図アプリから調べられます。追加した地点は周辺の写真に自動的にマッチします
   </p>
-  <p class="lbl" style="margin-top:16px">バックアップ</p>
-  <label style="display:flex; gap:8px; align-items:center; cursor:pointer; font-size:13px">
-    <input id="setBackupAuto" type="checkbox">
-    週次スナップショットを自動作成（3世代保持）
-  </label>
-  <div id="setBackupList" class="roots-list" style="margin:8px 0">確認中…</div>
-  <label style="display:flex; gap:8px; align-items:center; cursor:pointer; font-size:12.5px; margin-bottom:8px">
-    <input id="setBackupRebuild" type="checkbox">
-    作成時にベクトル索引も再構築する
-  </label>
-  <div class="btns">
-    <button id="setBackupNow" class="ghost" style="font-size:11.5px">今すぐ作成</button>
-  </div>
-  <p style="font-size:11px; color:var(--ink2); margin:6px 0 0">
-    対象はDBのみ（サムネ・検索インデックスはDBから再生成可能）。
-    完全バックアップは data フォルダごとコピーしてください
+  <p class="lbl" style="margin-top:16px">バックアップ / 復元</p>
+  <p style="font-size:11px; color:var(--ink2); margin:0 0 8px">
+    DB・検索インデックス・サムネ/プレビュー・場所データ (poi.db) を含むデータ
+    ディレクトリ全体をzipでダウンロード/復元します
   </p>
+  <div class="btns">
+    <button id="setBackupFull" class="ghost" style="font-size:11.5px">バックアップをダウンロード</button>
+  </div>
+  <div style="margin-top:12px">
+    <input id="backupRestoreFileInput" type="file" accept=".zip" style="margin-bottom:8px">
+    <div class="btns">
+      <button id="setBackupRestore" class="ghost" style="font-size:11.5px; color:#c0392b">このファイルで復元</button>
+    </div>
+    <div id="backupRestoreStatus" style="font-size:11.5px; color:var(--ink2); margin:8px 0"></div>
+  </div>
 
   <p class="lbl" style="margin-top:16px">データセット書き出し</p>
   <label style="display:flex; gap:8px; align-items:center; cursor:pointer; font-size:12.5px">
@@ -1807,44 +1805,6 @@ async function refreshRoots() {
   }
 }
 
-async function refreshBackupStatus() {
-  const b = await api("/backup/status");
-  $("setBackupAuto").checked = b.enabled;
-  const box = $("setBackupList");
-  box.innerHTML = "";
-  if (!b.snapshots.length) {
-    box.innerHTML = '<span style="color:var(--ink2); font-size:12px">スナップショットはまだありません</span>';
-    return;
-  }
-  for (const snap of b.snapshots) {
-    const when = snap.taken_at.replace("T", " ").slice(0, 16);
-    const row = document.createElement("div");
-    row.className = "root-row";
-    row.innerHTML = `
-      <span class="path" style="font-family:inherit">${esc(when)}</span>
-      <small>${(snap.size / 1048576).toFixed(1)} MB</small>
-      <button class="ghost" style="font-size:11px; padding:2px 10px; flex:none" data-restore>復元</button>`;
-    row.querySelector("[data-restore]").onclick = async () => {
-      if (!confirm(
-        `${when} 時点のバックアップに復元しますか?\n` +
-        `これ以降に追加・変更したタグ/写真は失われます。\n` +
-        `(復元前に現在の状態を自動でバックアップします)`)) return;
-      try {
-        await api("/backup/restore", {
-          method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({path: snap.path}),
-        });
-      } catch (err) {
-        alert("復元に失敗しました: " + err.message);
-        return;
-      }
-      box.innerHTML = '<span style="color:var(--ink2); font-size:12px">復元中です。アプリを再起動しています…</span>';
-      waitForRestartAndReload();
-    };
-    box.appendChild(row);
-  }
-}
-
 // 復元後のプロセス再起動 (docker-compose の restart policy 頼み) を待って
 // 自動リロードする。応答が返らない間は「壊れた?」と不安にさせないため
 // 静かにリトライを続ける
@@ -1873,37 +1833,71 @@ $("settingsBtn").onclick = async () => {
   $("setScanStartup").checked = !!s.scan_on_startup;
   $("setDlg").showModal();
   refreshRoots();
-  refreshBackupStatus();
   refreshVecStatus();
   refreshPoiSection();
   pollArchiveImport();  // バックグラウンド実行中/完了済みの取り込み結果を再表示する
   api("/index/status").then(st => renderAccelStatus(st.providers)).catch(() => {});
 };
-$("setBackupAuto").addEventListener("change", e => {
-  api("/settings", {
-    method: "PATCH", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({backup_auto: e.target.checked}),
-  });
-});
-$("setBackupNow").onclick = async () => {
-  $("setBackupNow").disabled = true;
-  $("setBackupNow").textContent = "作成中…";
+$("setBackupFull").onclick = async () => {
+  $("setBackupFull").disabled = true;
+  $("setBackupFull").textContent = "作成中…";
   try {
-    await api("/backup/snapshot", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({rebuild: $("setBackupRebuild").checked}),
-    });
-    await refreshBackupStatus();
-    if ($("setBackupRebuild").checked) await refreshVecStatus();
-    $("setBackupNow").textContent = "作成しました";
+    const res = await fetch("/api/backup/full", {method: "POST"});
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new Error(b?.detail || "HTTP " + res.status);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const a = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    a.href = url; a.download = m ? m[1] : "photofinder-backup.zip"; a.click();
+    URL.revokeObjectURL(url);
+    $("setBackupFull").textContent = "ダウンロードしました";
   } catch (err) {
-    $("setBackupNow").textContent = "エラー: " + err.message;
+    $("setBackupFull").textContent = "エラー: " + err.message;
   } finally {
     setTimeout(() => {
-      $("setBackupNow").textContent = "今すぐ作成";
-      $("setBackupNow").disabled = false;
+      $("setBackupFull").textContent = "バックアップをダウンロード";
+      $("setBackupFull").disabled = false;
     }, 3000);
   }
+};
+
+async function pollBackupRestore() {
+  const s = await api("/backup/full-restore-status");
+  if (s.running) {
+    $("backupRestoreStatus").textContent =
+      {validating: "検証中…", staging: "退避中…", extracting: "展開中…"}[s.phase] || "処理中…";
+    setTimeout(pollBackupRestore, 1000);
+  } else if (s.phase === "error") {
+    $("backupRestoreStatus").textContent = "エラー: " + s.error;
+    $("setBackupRestore").disabled = false;
+  } else if (s.phase === "done") {
+    $("backupRestoreStatus").textContent = "復元中です。アプリを再起動しています…";
+    waitForRestartAndReload();
+  }
+}
+
+$("setBackupRestore").onclick = async () => {
+  const file = $("backupRestoreFileInput").files[0];
+  if (!file) { alert("バックアップzipを選択してください"); return; }
+  if (!confirm(
+    "このファイルで復元しますか?\n現在のデータは自動で退避されますが、" +
+    "これ以降に追加・変更した内容は失われます。復元後アプリが再起動します。")) return;
+  $("setBackupRestore").disabled = true;
+  $("backupRestoreStatus").textContent = "アップロード中…";
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/backup/full-restore", {method: "POST", body: form});
+  const d = await res.json();
+  if (!d.started) {
+    $("backupRestoreStatus").textContent = "開始できませんでした: " + (d.reason || "");
+    $("setBackupRestore").disabled = false;
+    return;
+  }
+  pollBackupRestore();
 };
 $("setDatasetExport").onclick = async () => {
   $("setDatasetExport").disabled = true;
@@ -2278,9 +2272,11 @@ setInterval(async () => {
     $("cancelBtn").hidden = !s.running || s.cancel_requested;
     $("scanBtn").hidden = s.running;
     // スキャン中は復元を無効化 (バックエンドも409で拒否するが、押せる状態に
-    // 見せて後から拒否されるより先にグレーアウトする方が親切)
-    document.querySelectorAll("#setBackupList [data-restore]")
-      .forEach(b => { b.disabled = s.running; b.title = s.running ? "スキャン中は復元できません" : ""; });
+    // 見せて後から拒否されるより先にグレーアウトする方が親切)。ダウンロード
+    // ボタンは自身のクリックハンドラでのみ disabled を管理する (このポーリングで
+    // 触ると「作成中…」の間に再度有効化されてしまう) ため対象外
+    $("setBackupRestore").disabled = s.running;
+    $("setBackupRestore").title = s.running ? "スキャン中は復元できません" : "";
 
     if (s.running && s.phase === "extract" && s.total > 0) {
       $("scanProgress").hidden = false;

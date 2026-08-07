@@ -23,6 +23,18 @@ app2/photofinder (0.6.1) からのフォーク。Windows exe配布を廃止しDo
        コンテナのrestart policyで再起動させる方式。付随してbackup.pyの
        スナップショットファイル名が秒精度までしか無く同一秒内の連続作成で
        衝突していた既存バグ (ミリ秒精度を追加) を修正
+0.3.0: 週次DBスナップショット (VACUUM INTO・3世代・自動+手動) を廃止し、
+       フルデータバックアップ/復元 (POST /api/backup/full, POST
+       /api/backup/full-restore) に置き換え。DBだけでなくFAISS索引・
+       サムネ/プレビュー・poi.db・種名/色バンクキャッシュを含むデータ
+       ディレクトリ全体をzipで往復できる。復元前にライブデータを
+       data/backup/before_restore_<timestamp>/ へrenameで退避 (直前
+       1世代のみ保持)、失敗時はロールバックしプロセスは再起動しない。
+       復元成功時は旧DB単体復元と同じ「プロセス終了→コンテナのrestart
+       policyで再起動」パターンを踏襲 (vectors.faissが起動時一度きり
+       メモリへ読み込まれ、稼働中の差し替えが反映されないため)。設定の
+       backup_auto を廃止 (schema v7、既存DBの当該行は起動時マイグレーション
+       で削除)
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

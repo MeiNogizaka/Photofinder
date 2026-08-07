@@ -154,6 +154,24 @@ on mismatch (logged as a warning). The zero-shot banks in `bird.py`/`colors.py`
 future embedding-model swap that changes `DIM` needs `scanner.ML_VERSION` bumped too (so the backfill
 mechanism re-encodes every photo).
 
+**Full backup/restore (`photofinder/backup.py`, `POST /api/backup/full`/`full-restore`) replaces the
+old DB-only weekly snapshot — and must restart the process, not hot-swap.** `VectorStore` (above)
+loads `vectors.faiss` into memory exactly once, at process startup, and never re-reads it from disk
+afterward — restoring it by overwriting the on-disk file while the process is alive would leave the
+live in-memory index untouched, serving stale results. `POST /api/backup/full-restore` therefore
+follows the same "swap files → `os._exit(0)` → let Docker's `restart: unless-stopped` bring the
+process back" pattern the old DB-only restore used, extended to the whole data directory (DB via a
+fresh `VACUUM main INTO`, everything else — `vectors.faiss`, `poi.db`, `thumbs/`, `previews/`,
+`species_bank.npz`/`color_bank.npz` — via plain file copy; `poi.db` needs no WAL checkpoint since
+`poi_fetch.open_poi_db()` never sets `journal_mode=WAL`). Before extracting, the live data is
+`Path.rename()`d aside into `data/backup/before_restore_<timestamp>/` (not copied — instant, no
+extra disk use; only the single most recent staging generation is kept, deleted before the next one
+is created) so a bad restore can be recovered from the volume by hand; a failure *during* extraction
+rolls that staging back via `rollback_staged()` and leaves the process running rather than
+restarting into a broken state. Upload validation (`validate_backup_zip()` — manifest present,
+`photofinder.db` present, every member's resolved path inside `DATA_DIR`, no absolute-path or
+symlink members) always runs before any live file is touched.
+
 **GPU acceleration: CUDA only, no DirectML.** `ml.py`'s `ORT_PROVIDERS = ["CUDAExecutionProvider",
 "CPUExecutionProvider"]` is reused by every ONNX session in the app (`ml.py`, `detector.py`).
 DirectML (Windows GPU/APU support) existed in app2/photofinder, crashed on real RTX 3060 hardware

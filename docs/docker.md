@@ -61,9 +61,10 @@ named volumeには何も残らない。
 | `/app/models` | SigLIP2/YOLOv8x/OCRのONNXモデル | named volume (`photofinder_models`) |
 | `/photos` | 写真ライブラリ (read-only) | bind mount (ホスト側フォルダ) |
 
-`data/`のバックアップ (`VACUUM INTO`スナップショット、週次自動+手動) は
-`photofinder_data`ボリューム内`data/backup/`に作られる。FAISS索引・サムネは
-DBから再構築可能なので、最悪DBだけ守れば復旧できる (README参照)。
+設定画面の「バックアップ / 復元」から、DB・FAISS索引・サムネ/プレビュー・poi.db等
+`data/`全体をzipでダウンロード/復元できる (`POST /api/backup/full`/`full-restore`)。
+復元前のライブデータの退避先 (直前1世代のみ) も同じ`photofinder_data`ボリューム内
+`data/backup/before_restore_<timestamp>/`に作られる (docs/api-spec.md参照)。
 
 ### WSL2でのパフォーマンスの注意
 
@@ -151,17 +152,25 @@ volumes:
 再実行は不要。DBスキーマの変更は`photofinder/db.py`の`_migrate()`が
 `schema_meta.schema_version`を見て起動時に自動で追記型のマイグレーションを
 行うため、手動でのDB操作は基本的に不要(既存行を壊さない設計)。念のため、
-更新前に設定画面の「バックアップ」から手動スナップショットを取っておくと安全。
+更新前に設定画面の「バックアップ / 復元」から手動でフルバックアップを
+ダウンロードしておくと安全。
 
 ## 環境移行(別マシンへの引っ越し)
 
-Docker named volumeは「一時コンテナ+tar」方式でマシン間を移行できる(実機で
-動作確認済み)。この方法ならDB・タグ・サムネ・FAISS索引・POIデータ・バックアップ
-履歴が全部そのまま移り、**新環境での再スキャンは不要**になる。
+**基本の方法: アプリ内蔵のフルバックアップ/復元を使う**(設定画面の
+「バックアップ / 復元」、`POST /api/backup/full`/`full-restore`)。旧環境で
+バックアップzipをダウンロードし、新環境で(空の状態で)起動したコンテナへ
+そのzipをアップロードして復元するだけで、DB・タグ・サムネ・FAISS索引・
+poi.dbが全部そのまま移り、**新環境での再スキャンは不要**になる。docker
+volume操作は一切不要。復元は数百MB〜数GB規模のブラウザアップロードになるため、
+低速/不安定な回線ではなくローカルネットワーク越しに行うことを推奨する。
 
-**旧環境でバックアップを作成**(volume名は`docker compose --profile cpu config
---format json`で確認できる。`name: photofinder`+volumeキー`photofinder_data`
-から実際には`photofinder_photofinder_data`になる):
+**フォールバック: docker volumeを「一時コンテナ+tar」で丸ごと移す方法**
+(実機で動作確認済み)。ライブラリが非常に大きく、ブラウザ経由のzip
+アップロードより生の`tar`/`scp`の方が確実な場合に使う。volume名は
+`docker compose --profile cpu config --format json`で確認できる
+(`name: photofinder`+volumeキー`photofinder_data`から実際には
+`photofinder_photofinder_data`になる):
 
 ```bash
 docker compose --profile cpu down   # -v は付けない
@@ -186,15 +195,6 @@ docker compose --profile cpu up -d
 変わっていなければ、大きなtarを転送するより新環境で`docker compose --profile
 setup run --rm model-fetch`をやり直す方が簡単(新環境にも元々ネット接続は
 必要なので追加の要件にはならない)。
-
-**アプリ内の「バックアップ」機能(設定画面)との違いに注意**: あちらは
-`data/backup/`へのDBスナップショット作成のみで、**復元用のAPI/UIは無い**
-(`photofinder/backup.py`に`snapshot()`/`list_snapshots()`はあるが
-`restore()`相当は未実装)。スナップショットファイルだけを使って軽量に
-移行したい場合は、停止中に手動で`data/photofinder.db`を置き換える必要があり、
-かつサムネ・FAISS索引は無いので初回起動時に再構築(実質的な再スキャン)が
-必要になる。特別な事情がなければ、上記のvolume丸ごとtar方式の方が確実で
-手間も少ない。
 
 ## ネットワーク公開範囲 (認証機構は無い)
 

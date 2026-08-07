@@ -168,9 +168,13 @@ docs/api-spec.md 参照。設計原則:
 - エクスポート時の GPS 除去オプション（SNS 投稿向け）
 
 ### バックアップ
-- `data/` ディレクトリ = 全状態。ユーザ操作: フォルダコピーのみ
-- 自動スナップショット: 週1 `VACUUM INTO data/backup/photofinder-YYYYMMDD.db`（世代3）
-- FAISS・サムネは DB から再生成可能（免責事項として README 記載）。DB のみ死守
+- `data/` ディレクトリ = 全状態
+- 設定画面から手動でフルバックアップ (DB は `VACUUM main INTO` で圧縮、FAISS索引・
+  サムネ/プレビュー・poi.db等はそのままコピー) をzipでダウンロード/復元可能
+  (`photofinder/backup.py`、`POST /api/backup/full`/`full-restore`、§11 参照)
+- 復元前にライブデータを `data/backup/before_restore_<timestamp>/` へ退避 (1世代のみ保持)。
+  復元後はプロセスを終了しDockerのrestart policyで再起動 (vectors.faissが起動時
+  一度きりメモリへ読み込まれ、稼働中の差し替えが反映されないため)
 - スキーマに `schema_version` を持ち、起動時マイグレーション
 
 ### 性能目標
@@ -262,3 +266,8 @@ app2/photofinderからのフォーク後、以下を追加実装した(詳細は
 - **データセット書き出し**: 既存の確定/否認タグ機構(`photo_tags.verified`)を人手の
   正解データとして扱い、`POST /api/export/dataset`で教師/評価データセット用の
   JSONL+画像zipを書き出す新機能(`photofinder/dataset_export.py`)。
+- **フルバックアップ/復元**: 週次DBスナップショット(`VACUUM INTO`・DBのみ)を廃止し、
+  `data/`ディレクトリ全体(DB・FAISS索引・サムネ/プレビュー・poi.db等)をzipで
+  ダウンロード/復元する`photofinder/backup.py`・`POST /api/backup/full`/
+  `full-restore`に置き換えた。復元前にライブデータを退避してから展開し、失敗時は
+  ロールバック、成功時はプロセス終了→Dockerのrestart policyで再起動する。

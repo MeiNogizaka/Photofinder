@@ -2,12 +2,11 @@
 -- M1 では embedding/FTS/検出系テーブルも作成しておく（M2 以降で使用）
 
 CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT);
-INSERT OR IGNORE INTO schema_meta VALUES ('schema_version', '6');
+INSERT OR IGNORE INTO schema_meta VALUES ('schema_version', '7');
 
 -- アプリ設定 (key-value)。既定値はここで播種し、変更は PATCH /api/settings
 CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 INSERT OR IGNORE INTO app_settings VALUES ('scan_on_startup', '1');
-INSERT OR IGNORE INTO app_settings VALUES ('backup_auto', '1');
 
 CREATE TABLE IF NOT EXISTS roots (
     id                INTEGER PRIMARY KEY,
