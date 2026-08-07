@@ -1,7 +1,7 @@
 # PhotoFinder REST API 仕様
 
 - Base URL: `http://127.0.0.1:8686/api`
-- 認証: **未実装**。photofinder2はDocker配布で、公開範囲は`docker-compose.yml`の`ports:`
+- 認証: **未実装**。photofinderはDocker配布で、公開範囲は`docker-compose.yml`の`ports:`
   マッピングで制御する (既定は127.0.0.1のみ)。LAN/インターネット公開時のアクセス制御は
   利用者側の責任 (リバースプロキシでの認証・VPN等)。詳細は docs/docker.md 参照
 - エラー形式: FastAPI 標準の `HTTPException` をそのまま使用 → `{ "detail": "エラーメッセージ" }`。

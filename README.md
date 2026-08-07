@@ -1,4 +1,4 @@
-# PhotoFinder2 — ローカル写真 自然言語検索アプリ (Docker版)
+# PhotoFinder — ローカル写真 自然言語検索アプリ (Docker版)
 
 PC ローカル / NAS 上の写真を **日本語の自然言語** と **画像例** で高速検索できる個人用アプリ。
 外部サービス不要・完全ローカル動作がデフォルト。軽量・軽快を最優先した設計。
@@ -70,7 +70,7 @@ PC ローカル / NAS 上の写真を **日本語の自然言語** と **画像�
 ## リポジトリ構成
 
 ```
-photofinder2/
+photofinder/
 ├── README.md                 ← 本ファイル
 ├── LICENSE                    ← GNU AGPL-3.0 全文
 ├── CLAUDE.md                 ← Claude Code 向けコードベース案内
@@ -107,7 +107,7 @@ photofinder2/
 │                                 結果を解析し、AI自動タグの確定/否認率・YOLO信頼度
 │                                 しきい値の感度分析・種名マージン分析を表示する
 ├── docs/
-│   ├── design.md             ← 詳細設計書（app2/photofinder当初案からの差分表 + photofinder2での追加変更）
+│   ├── design.md             ← 詳細設計書（app2/photofinder当初案からの差分表 + photofinderでの追加変更）
 │   ├── api-spec.md           ← REST API エンドポイント仕様
 │   ├── data-schema.md        ← ER 図 + SQLite DDL + FAISS/POI DB 構成
 │   ├── docker.md              ← Docker配布の詳細（ビルド・ボリューム・公開範囲・トラブルシュート）
@@ -175,7 +175,7 @@ Dockerのbind mount（`PHOTO_LIBRARY_PATH:/photos:ro`）はDockerホストの**�
 そのままコンテナに渡すだけで、SMBを直接しゃべるわけではない。そのためNAS上の写真を使うには、
 先にDockerホスト（Linux）側でSMB共有をOS標準の方法でマウントし、そのマウント先を
 `PHOTO_LIBRARY_PATH` に指定する（旧app2/photofinderのWindows exeはUNCパス`\\NAS\photo`を
-ルートとして直接登録できたが、Docker/Linux専用になったphotofinder2ではこの一段が必要になる）。
+ルートとして直接登録できたが、Docker/Linux専用になったphotofinderではこの一段が必要になる）。
 
 ```bash
 # cifs-utils (Ubuntu/Debian系)
@@ -244,7 +244,7 @@ python3 -m venv .venv
 **app2/photofinder時点でM1〜M5完了**（走査・EXIF・埋め込み検索・物体検出/OCR・野鳥/場所名/
 バックアップ、詳細はdocs/design.mdの差分表参照）。
 
-**photofinder2でのフォーク後の変更**:
+**photofinderでのフォーク後の変更**:
 - **配布をDocker専用に変更** — Windows exe (PyInstaller) 配布・DirectML対応コードを廃止。
   `Dockerfile`をビルド引数`VARIANT=cpu|cuda`でCPU/CUDA 2バリアントに作り分け。モデル取得は
   アプリイメージのビルド/起動ライフサイクルから独立した`model-fetch`サービスに分離
@@ -286,7 +286,7 @@ Copyright (C) 2026 MeiNogizaka
 物体検出に使用している YOLOv8x（Ultralytics）の学習済みモデルが AGPL-3.0 の対象であり
 （Ultralytics 公式方針: 学習済みモデルは既定で AGPL-3.0、商用の非公開配布には別途
 Enterprise License が必要）、本アプリを配布・公開する以上その条件に合わせる必要があるため、
-PhotoFinder2 自体もこのライセンスを選択している。RAW対応で追加した `rawpy` が動的リンクで
+PhotoFinder 自体もこのライセンスを選択している。RAW対応で追加した `rawpy` が動的リンクで
 同梱する `LibRaw` は LGPL-2.1（既にAGPL-3.0のプロジェクトへの追加はライセンス選定に影響しない）。
 
 AGPL-3.0 は通常の GPL と異なり、**ネットワーク経由でソフトウェアと対話できるようにした

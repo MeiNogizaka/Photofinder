@@ -8,9 +8,9 @@
 > 「なぜそうしなかったか」が分かるようにするため。
 >
 > **本書はapp2/photofinder (フォーク元) の設計書をそのまま引き継いでいる。**
-> 下表はapp2/photofinder時点での「当初案 vs 実装」の記録であり、photofinder2で
+> 下表はapp2/photofinder時点での「当初案 vs 実装」の記録であり、photofinderで
 > さらに変わった点 (Docker配布・RAW対応・FAISSチューニング・データセット書き出し)
-> は末尾の「photofinder2での追加変更」節を参照すること。
+> は末尾の「photofinderでの追加変更」節を参照すること。
 
 | 項目 | 本書の当初案 | 実装 | 理由 |
 |---|---|---|---|
@@ -19,7 +19,7 @@
 | OCR エンジン (§1, §2) | PaddleOCR (ONNX変換) | RapidOCR + japan_PP-OCRv3 認識モデル | 変換済みONNXの入手性・セットアップの簡便さで選定。実写看板で日本語/英語混在文の高精度読み取りを確認済み |
 | 鳥種名推定 (§1, §7) | EfficientNetV2-S を CUB/NABirds+日本産鳥類で転移学習 | SigLIP ゼロショット（画像/種名テキストembeddingの類似度）。学習なし | 既製の Kaggle 525種分類器を試したところ日本の普通種（カワセミ等）がクラスに無く近縁種に誤答したため不採用。学習データ収集・学習コストも回避。理由は `photofinder/bird.py` docstring 参照 |
 | 建物名推定・第二手段 (§7) | ランドマーク分類器（Google Landmarks v2） | 未実装。代わりにユーザによる POI 手動管理（都道府県取得/カスタム地点追加/写真ごとの場所名編集）を実装 | 分類器は誤爆対策が難しく個人宅周辺等では実用性が低い。ユーザが直接データを補える方が確実 |
-| RAW 対応 (§2 step1) | 埋め込みプレビュー優先でデコード | app2/photofinderでは未対応だった（jpg/jpeg/png/heicのみ）。**photofinder2で当初案通りrawpy埋め込みプレビュー抽出により対応**（`photofinder/raw_utils.py`、詳細は末尾節） | app2/photofinder時点ではJPG運用にスコープを限定していたが、photofinder2で解消 |
+| RAW 対応 (§2 step1) | 埋め込みプレビュー優先でデコード | app2/photofinderでは未対応だった（jpg/jpeg/png/heicのみ）。**photofinderで当初案通りrawpy埋め込みプレビュー抽出により対応**（`photofinder/raw_utils.py`、詳細は末尾節） | app2/photofinder時点ではJPG運用にスコープを限定していたが、photofinderで解消 |
 | フロントエンド (§6) | React + Vite + TanStack Query/Virtual + Zustand + MapLibre | ビルド不要の単一 HTML + バニラ JS（`photofinder/static/index.html`） | 個人用途でビルドパイプラインの運用コストを避けた。React 版は `samples/typescript/` に参照実装として残すが未接続 |
 | 地図表示 (§6 詳細パネル) | MapLibre + ローカルタイル/OSM | 未実装。場所は都道府県/市区町村/POI名のテキスト表示のみ | スコープ外。地図ウィジェットの追加は将来対応 |
 | index_state (§2 要点) | `pending / meta_done / ml_done / complete` の4段階 | `pending / error / complete` の3段階（`ml_version` 列でパイプライン版によるバックフィルを別管理） | 実装を進める中で2段階の中間状態は不要と判明。エラー状態を明示する方が運用上有用だった |
@@ -244,7 +244,7 @@ def reverse_search(uploaded_image):
 
 ---
 
-## 11. photofinder2での追加変更
+## 11. photofinderでの追加変更
 
 app2/photofinderからのフォーク後、以下を追加実装した(詳細はCLAUDE.md/docs/docker.md参照):
 

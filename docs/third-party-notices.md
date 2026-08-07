@@ -7,7 +7,7 @@
 
 ライセンス表記は `pip` パッケージのインストール済みメタデータ（`importlib.metadata`）と
 各モデル配布元の記載を実際に確認した上で記録している（app2/photofinder時点2026-07-10、
-photofinder2でのDocker/RAW関連追加分は2026-07-24に確認）。パッケージのバージョンアップや
+photofinderでのDocker/RAW関連追加分は2026-07-24に確認）。パッケージのバージョンアップや
 モデル差し替え時は再確認すること。
 
 ---
@@ -37,7 +37,7 @@ requirements.txt にもDockerイメージにも含まれない（変換手順は
 `tools/download_models.py` の docstring 参照）。
 
 AGPL-3.0 は「配布」に加え、**ネットワーク経由でソフトウェアと対話できる状態にした
-時点で**ソース開示義務が生じる「ネットワーク条項」（第13条）を持つ。photofinder2は
+時点で**ソース開示義務が生じる「ネットワーク条項」（第13条）を持つ。photofinderは
 Dockerの`docker-compose.yml`で既定`127.0.0.1`バインドのみに制限しているが、
 `ports:`の設定を変えてLAN/インターネットに公開した場合はこの条項の対象になる点に
 留意すること（docs/docker.md参照）。
@@ -57,7 +57,7 @@ Dockerの`docker-compose.yml`で既定`127.0.0.1`バインドのみに制限し�
 | xxhash | BSD-2-Clause | |
 | faiss-cpu | MIT | |
 | onnxruntime | MIT | CPUイメージで使用。CUDAイメージでは `onnxruntime-gpu`（requirements-gpu.txt、同じくMIT）に差し替わる（Dockerfileのビルド引数`VARIANT`参照）。無印onnxruntimeと同居できないため両方を同時インストールすることはない |
-| nvidia-cudnn-cu13（requirements-gpu.txt、CUDAイメージのみ） | NVIDIA Proprietary Software License Agreement | cuDNN本体はNVIDIA独自ライセンス（OSSではない）。再配布はpipホイール経由でNVIDIA自身が行っている。**`photofinder2:cuda`イメージを第三者に配布/公開する場合、この依存も配布物に含まれる**点に注意（app2/photofinder時点では開発機限定の追加インストールで配布物には含まれなかったが、photofinder2ではCUDAイメージ自体が配布対象になったため状況が変わった） |
+| nvidia-cudnn-cu13（requirements-gpu.txt、CUDAイメージのみ） | NVIDIA Proprietary Software License Agreement | cuDNN本体はNVIDIA独自ライセンス（OSSではない）。再配布はpipホイール経由でNVIDIA自身が行っている。**`photofinder:cuda`イメージを第三者に配布/公開する場合、この依存も配布物に含まれる**点に注意（app2/photofinder時点では開発機限定の追加インストールで配布物には含まれなかったが、photofinderではCUDAイメージ自体が配布対象になったため状況が変わった） |
 | numpy | BSD-3-Clause / 0BSD / MIT / Zlib / CC0-1.0（バンドル部品込み、いずれも許諾的） | |
 | tokenizers | Apache-2.0 | |
 | huggingface_hub | Apache-2.0 | |
@@ -174,8 +174,8 @@ Ultralytics AGPL-3.0 条件のため、上記の経緯と結論はそのまま�
 いずれもライセンス区分に変更なし（YOLOv8系は引き続きAGPL-3.0、SigLIP系は引き続き
 Apache-2.0）のため、上記の経緯と結論はそのまま有効。）
 
-（追記 2026-07-24: photofinder2としてDocker専用配布 (CPU/CUDA) に移行。RAW対応で
+（追記 2026-07-24: photofinderとしてDocker専用配布 (CPU/CUDA) に移行。RAW対応で
 追加した `rawpy`(MIT, LibRaw LGPL-2.1を動的リンク同梱) と `exifread`(BSD-3-Clause)
 はいずれも許諾的/LGPLで、既存のAGPL-3.0の結論に影響しない。`nvidia-cudnn-cu13`
-(NVIDIA独自ライセンス) は `photofinder2:cuda` イメージ自体の配布物に含まれる形に
+(NVIDIA独自ライセンス) は `photofinder:cuda` イメージ自体の配布物に含まれる形に
 変わった点に注意（上記表の該当行参照）。）

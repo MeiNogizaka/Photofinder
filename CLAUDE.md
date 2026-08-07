@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-PhotoFinder2: a local-only photo search app for personal use, forked from `app2/photofinder`
+PhotoFinder: a local-only photo search app for personal use, forked from `app2/photofinder`
 (kept unchanged as the fork point). Natural-language (Japanese) and image-similarity search over
 photos on disk, with EXIF, OCR, object detection, bird species ID, and place-name enrichment — all
 computed once at index time, served from a single FastAPI process. No cloud services by default;
@@ -85,7 +85,7 @@ FAISS/SQLite state and race on writes.
 
 **FAISS's C++ file I/O is not Unicode-path-safe on Windows.** This was found on real hardware while
 app2/photofinder still targeted Windows (non-ASCII paths like Japanese "デスクトップ" broke
-`faiss.read_index`/`write_index`). photofinder2 has no Windows target at all, so the trigger no
+`faiss.read_index`/`write_index`). photofinder has no Windows target at all, so the trigger no
 longer applies, but `photofinder/vectors.py`'s `_read_index`/`_write_index` helpers (which route
 through Python's own `open()` + `PyCallbackIOReader`/`Writer` instead of a raw path string) are kept
 as-is since they're harmless and correct on Linux too — never call `faiss.read_index`/`write_index`
@@ -261,7 +261,7 @@ photo library is a read-only bind mount at `/photos` — users must register sca
 runtime` explicitly — omitting it silently builds the wrong stage.** Confirmed by an actual repro:
 without `target: runtime`, `docker compose --profile cuda up` built and ran the Dockerfile's *last*
 stage (`model-fetch`, since Docker builds the last stage of a multi-stage file when no target is
-given) instead of `runtime`. The container came up tagged `photofinder2:cuda` but its `CMD` was
+given) instead of `runtime`. The container came up tagged `photofinder:cuda` but its `CMD` was
 `python tools/download_models.py` — it printed "exists: ..." for every model (already present from
 the earlier `model-fetch` run), exited 0, and `restart: unless-stopped` then restart-looped it
 forever. No error surfaced anywhere; the only symptom was the container never serving HTTP and
@@ -277,7 +277,7 @@ wired up to the current API; don't assume it reflects current endpoints.
 
 - [docs/design.md](docs/design.md) — original design doc (inherited from app2/photofinder); the
   table at the top lists every place the app2/photofinder implementation diverged from it, and a
-  new §11 at the end lists what photofinder2 changed further.
+  new §11 at the end lists what photofinder changed further.
 - [docs/api-spec.md](docs/api-spec.md) — REST endpoint reference.
 - [docs/data-schema.md](docs/data-schema.md) — ER diagram and the `poi.db`/FAISS file formats.
 - [docs/docker.md](docs/docker.md) — Docker build/deploy details, volume layout, network exposure,

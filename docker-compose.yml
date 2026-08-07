@@ -11,10 +11,10 @@
 
 # 明示的に固定する: docker composeは既定でプロジェクト名(≒volume名の接頭辞)を
 # カレントディレクトリ名から決めるため、zip展開先のフォルダ名が変わる
-# (photofinder2-0.2.0 等) と別プロジェクト扱いになり既存のnamed volume
-# (下記 photofinder2_data/photofinder2_models) を見失う。フォルダ名に依存
+# (photofinder-0.2.0 等) と別プロジェクト扱いになり既存のnamed volume
+# (下記 photofinder_data/photofinder_models) を見失う。フォルダ名に依存
 # させないよう固定しておく (docs/docker.md「アップデート手順」参照)
-name: photofinder2
+name: photofinder
 
 services:
   photofinder-cpu:
@@ -23,7 +23,7 @@ services:
       target: runtime
       args:
         VARIANT: cpu
-    image: photofinder2:cpu
+    image: photofinder:cpu
     profiles: ["cpu"]
     # スキャン中(ML推論込み)にホストの全コアを使い切らないようcgroups側で制限する
     deploy:
@@ -41,8 +41,8 @@ services:
       PHOTOFINDER_HOST: 0.0.0.0   # コンテナ内で全interface待受 (実際の公開範囲は上のports:が決める)
       PHOTOFINDER_PORT: "8686"
     volumes:
-      - photofinder2_data:/app/data
-      - photofinder2_models:/app/models
+      - photofinder_data:/app/data
+      - photofinder_models:/app/models
       - ${PHOTO_LIBRARY_PATH:?Set PHOTO_LIBRARY_PATH (e.g. in a .env file) to your photo library path}:/photos:ro
     restart: unless-stopped
 
@@ -52,7 +52,7 @@ services:
       target: runtime
       args:
         VARIANT: cuda
-    image: photofinder2:cuda
+    image: photofinder:cuda
     profiles: ["cuda"]
     # cpus: photofinder-cpuサービスと同じ理由。GPU推論を使っても、EXIF/走査/
     # サムネ生成やOCRはCPU側で動くため無関係ではない
@@ -72,8 +72,8 @@ services:
       PHOTOFINDER_HOST: 0.0.0.0
       PHOTOFINDER_PORT: "8686"
     volumes:
-      - photofinder2_data:/app/data
-      - photofinder2_models:/app/models
+      - photofinder_data:/app/data
+      - photofinder_models:/app/models
       - ${PHOTO_LIBRARY_PATH:?Set PHOTO_LIBRARY_PATH (e.g. in a .env file) to your photo library path}:/photos:ro
     restart: unless-stopped
 
@@ -86,8 +86,8 @@ services:
       target: model-fetch
     profiles: ["setup"]
     volumes:
-      - photofinder2_models:/app/models
+      - photofinder_models:/app/models
 
 volumes:
-  photofinder2_data:
-  photofinder2_models:
+  photofinder_data:
+  photofinder_models:

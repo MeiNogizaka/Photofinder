@@ -177,7 +177,7 @@ CREATE TABLE poi_meta (pref TEXT PRIMARY KEY, fetched_at TEXT NOT NULL, count IN
 |---|---|
 | ファイル | `data/vectors.faiss`（tmp 書き→rename でアトミック更新） |
 | 型 | `IndexIDMap2(IndexHNSWFlat(ml.DIM, M=32))`、〜50万枚まで。`ml.DIM`は現在1152（SigLIP2 so400m、2026-07-19〜。旧768から変更）。次元変更時は`VectorStore`が不一致を検知して自動再構築（`photofinder/vectors.py`参照） |
-| HNSWパラメータ | `efConstruction=200`（旧: FAISS既定値40のまま未調整）。`efSearch`はクエリのk（main.pyのフィルタ絞り込み強度に応じた200〜2000の動的拡張）に合わせ`max(128, min(4000, k*2))`で毎回動的設定（photofinder2で追加） |
+| HNSWパラメータ | `efConstruction=200`（旧: FAISS既定値40のまま未調整）。`efSearch`はクエリのk（main.pyのフィルタ絞り込み強度に応じた200〜2000の動的拡張）に合わせ`max(128, min(4000, k*2))`で毎回動的設定（photofinderで追加） |
 | 距離 | 内積（ベクトルは L2 正規化済み → コサイン等価） |
 | 削除 | tombstone（`photos.deleted=1` で検索後除外）。HNSW は remove 不可のため再インデックスで同一 id が重複しうる（検索時 dedupe） |
 | 再構築 | `POST /api/index/rebuild-vectors`（設定 UI・バックアップ時オプションからも可）。既存ベクトルを reconstruct して重複・削除済み id を除去。画像の再エンコード不要 |

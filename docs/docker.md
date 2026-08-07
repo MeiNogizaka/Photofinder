@@ -1,6 +1,6 @@
 # Docker配布
 
-photofinder2はDocker専用配布 (Windows exeビルドは廃止)。CPU/CUDAの2バリアントを
+photofinderはDocker専用配布 (Windows exeビルドは廃止)。CPU/CUDAの2バリアントを
 1本の`Dockerfile`からビルド引数`VARIANT`で作り分ける。
 
 ## クイックスタート
@@ -57,12 +57,12 @@ named volumeには何も残らない。
 
 | マウント先 | 内容 | 種別 |
 |---|---|---|
-| `/app/data` | SQLite DB・FAISS索引・サムネ/プレビュー・バックアップ・poi.db | named volume (`photofinder2_data`) |
-| `/app/models` | SigLIP2/YOLOv8x/OCRのONNXモデル | named volume (`photofinder2_models`) |
+| `/app/data` | SQLite DB・FAISS索引・サムネ/プレビュー・バックアップ・poi.db | named volume (`photofinder_data`) |
+| `/app/models` | SigLIP2/YOLOv8x/OCRのONNXモデル | named volume (`photofinder_models`) |
 | `/photos` | 写真ライブラリ (read-only) | bind mount (ホスト側フォルダ) |
 
 `data/`のバックアップ (`VACUUM INTO`スナップショット、週次自動+手動) は
-`photofinder2_data`ボリューム内`data/backup/`に作られる。FAISS索引・サムネは
+`photofinder_data`ボリューム内`data/backup/`に作られる。FAISS索引・サムネは
 DBから再構築可能なので、最悪DBだけ守れば復旧できる (README参照)。
 
 ### WSL2でのパフォーマンスの注意
@@ -71,7 +71,7 @@ WSL2上でコンテナを動かし、`PHOTO_LIBRARY_PATH`にWindows側フォル�
 (`/mnt/c/Users/...`等) を指定すると、WSL2からNTFSへのアクセスは小さいファイルを
 大量に読み書きする処理 (差分スキャンのxxHash計算・サムネ/プレビュー生成など) で
 体感できるほど遅くなることが知られている (WSL2のよく知られた制約で、
-photofinder2固有の問題ではない)。写真枚数が多いライブラリでは:
+photofinder固有の問題ではない)。写真枚数が多いライブラリでは:
 
 - 可能なら写真そのものをWSL2側のネイティブファイルシステム (例: `~/Pictures`) に
   置き、`PHOTO_LIBRARY_PATH`もそちらを指す
@@ -87,8 +87,8 @@ photofinder2固有の問題ではない)。写真枚数が多いライブラリ�
 
 ```yaml
     volumes:
-      - photofinder2_data:/app/data
-      - photofinder2_models:/app/models
+      - photofinder_data:/app/data
+      - photofinder_models:/app/models
       - ${PHOTO_LIBRARY_PATH}:/photos:ro
       - ${PHOTO_LIBRARY_PATH2}:/photos2:ro   # 追加
 ```
@@ -123,26 +123,26 @@ docker compose --profile cpu up -d      # コンテナを作り直す。volume�
 
 **注意点(実機で確認済みの落とし穴)**: docker composeは既定でプロジェクト名
 (≒volume名の接頭辞)を**カレントディレクトリ名**から決める。zipの展開先フォルダ名
-が元のフォルダ名と異なる(例: `photofinder2-0.2.0/`のように展開される)と、
-別プロジェクト扱いになり既存の`photofinder2_data`/`photofinder2_models`
+が元のフォルダ名と異なる(例: `photofinder-0.2.0/`のように展開される)と、
+別プロジェクト扱いになり既存の`photofinder_data`/`photofinder_models`
 volumeを見失う — データが消えるわけではない(volume自体はDocker上に残り続ける)
 が、新しいコンテナは空のvolumeで起動してしまい、一見データが消えたように見える。
-これを避けるため`docker-compose.yml`の先頭に`name: photofinder2`を明示している
+これを避けるため`docker-compose.yml`の先頭に`name: photofinder`を明示している
 (フォルダ名に依存しない)。**この行を削除・変更しないこと。**
 万一(古いフォルダ名依存のバージョンで運用していた等の理由で)新しいvolumeが
 作られてしまった場合は、`docker volume ls`で古い方(例:
-`<旧フォルダ名>_photofinder2_data`のような名前)が残っているか確認し、
+`<旧フォルダ名>_photofinder_data`のような名前)が残っているか確認し、
 新しく作られた空のvolumeを`docker compose down -v`で消してから、
 `docker-compose.yml`の`volumes:`定義に`external: true`と`name:`を指定して
 古いvolumeを明示的に指すようにすれば復旧できる:
 ```yaml
 volumes:
-  photofinder2_data:
+  photofinder_data:
     external: true
-    name: <旧フォルダ名>_photofinder2_data
-  photofinder2_models:
+    name: <旧フォルダ名>_photofinder_data
+  photofinder_models:
     external: true
-    name: <旧フォルダ名>_photofinder2_models
+    name: <旧フォルダ名>_photofinder_models
 ```
 
 ### モデル・スキーマの扱い
@@ -160,13 +160,13 @@ Docker named volumeは「一時コンテナ+tar」方式でマシン間を移行
 履歴が全部そのまま移り、**新環境での再スキャンは不要**になる。
 
 **旧環境でバックアップを作成**(volume名は`docker compose --profile cpu config
---format json`で確認できる。`name: photofinder2`+volumeキー`photofinder2_data`
-から実際には`photofinder2_photofinder2_data`になる):
+--format json`で確認できる。`name: photofinder`+volumeキー`photofinder_data`
+から実際には`photofinder_photofinder_data`になる):
 
 ```bash
 docker compose --profile cpu down   # -v は付けない
 docker run --rm \
-  -v photofinder2_photofinder2_data:/from \
+  -v photofinder_photofinder_data:/from \
   -v "$(pwd)":/backup \
   alpine tar czf /backup/pf2_data_backup.tar.gz -C /from .
 ```
@@ -174,9 +174,9 @@ docker run --rm \
 `pf2_data_backup.tar.gz`をUSBメモリ・scp等で新環境に転送し、**新環境で復元**:
 
 ```bash
-docker volume create photofinder2_photofinder2_data
+docker volume create photofinder_photofinder_data
 docker run --rm \
-  -v photofinder2_photofinder2_data:/to \
+  -v photofinder_photofinder_data:/to \
   -v "$(pwd)":/backup \
   alpine tar xzf /backup/pf2_data_backup.tar.gz -C /to
 docker compose --profile cpu up -d
