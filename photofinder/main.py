@@ -1066,6 +1066,7 @@ async def backup_full_restore(file: UploadFile = File(...)):
 def backup_full_restore_status():
     return backup_mod.STATUS.snapshot()
 
+
 @app.post("/api/export/dataset")
 def export_dataset(body: dict = Body(default={})):
     """人手タグ付け済み写真をJSONL+画像zipとしてエクスポート (教師/評価データセット化)。
