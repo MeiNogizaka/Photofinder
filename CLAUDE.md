@@ -119,7 +119,10 @@ exporting a RAW-sourced photo doesn't hit the old `Image.open()`-only path and c
 **Search is RRF fusion**, not a single index: FTS5 (BM25 over SudachiPy-tokenized Japanese text) and
 FAISS (SigLIP text-embedding cosine similarity) are ranked independently, then merged by reciprocal
 rank fusion (`RRF_K=60`). Non-empty `q` always uses this hybrid path; sort order (`order=asc|desc`)
-only applies when browsing with an empty query, since RRF ranking otherwise takes priority.
+only applies when browsing with an empty query, since RRF ranking otherwise takes priority. Within
+that browse path, the sort *column* itself switches too: `exported=true` (see below) sorts by
+`photos.exported_at` instead of `taken_at`, so "browse exported photos" defaults to most-recently-
+exported-first rather than most-recently-taken-first.
 **Top-k is now dynamic** (`main.py`'s `_widen_k()`): app2/photofinder hardcoded `k=200` for the FAISS
 leg regardless of filters, even though `docs/design.md` always described widening it based on filter
 selectivity (`k=widen(limit, filters)` in the §9.2 pseudocode) — that gap is now closed. Selectivity
@@ -234,7 +237,11 @@ volume entirely — and deletes it via a `BackgroundTask` attached to the `FileR
 response finishes streaming. Follow this pattern (in-memory bytes, or a temp file + `BackgroundTask`
 cleanup) for any future export-like endpoint — never write a new one into `data/exports/`. `main.py`'s
 `export()` does write one thing to SQLite on success: `photos.exported_at` (schema v6+), a timestamp
-used only to show an "already exported" badge in the grid (`_hydrate()`'s `exported` field) — this is
+used to show an "already exported" badge in the grid (`_hydrate()`'s `exported` field) and, via
+`GET /api/search`'s `exported=true|false` param (`_build_filters()`), to let a user browse only
+exported/unexported photos — sorted by `exported_at` itself (most recent first by default) rather
+than `taken_at` when that filter is active and browsing with no `q`, mirroring the `posted` filter's
+existing `photo_posts`-existence check but querying a plain column instead of a join. This is
 metadata about the export having happened, not the exported bytes themselves, so it doesn't reintroduce
 on-disk persistence of the export output.
 
