@@ -9,8 +9,10 @@ PC ローカル / NAS 上の写真を **日本語の自然言語** と **画像�
 ライセンス: **AGPL-3.0**（[LICENSE](LICENSE) / 詳細は末尾「ライセンス」節参照）
 
 <p align="center">
-  <img src="docs/screenshots/grid.jpg" width="49%" alt="検索グリッド画面">
-  <img src="docs/screenshots/detail.jpg" width="49%" alt="写真詳細パネル（EXIF・AIタグ・SNS投稿リンク）">
+  <img src="docs/screenshots/grid.jpg" width="49%" alt="検索グリッド画面（詳細パネル: EXIF・AIタグ・SNS投稿リンク）">
+  <img src="docs/screenshots/export.jpg" width="49%" alt="書き出し画面（切り出し・透かし設定）">
+  <br>
+  <img src="docs/screenshots/settings.jpg" width="49%" alt="設定画面（フォルダ管理・POIデータ・バックアップ・データセット書き出し等）">
 </p>
 
 ## コンセプト
