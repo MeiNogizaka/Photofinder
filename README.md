@@ -9,11 +9,9 @@ PC ローカル / NAS 上の写真を **日本語の自然言語** と **画像�
 ライセンス: **AGPL-3.0**（[LICENSE](LICENSE) / 詳細は末尾「ライセンス」節参照）
 
 <p align="center">
-  <img src="docs/screenshots/grid.png" width="49%" alt="検索グリッド画面">
-  <img src="docs/screenshots/detail.png" width="49%" alt="写真詳細パネル（EXIF・AIタグ・SNS投稿リンク）">
+  <img src="docs/screenshots/grid.jpg" width="49%" alt="検索グリッド画面">
+  <img src="docs/screenshots/detail.jpg" width="49%" alt="写真詳細パネル（EXIF・AIタグ・SNS投稿リンク）">
 </p>
-
-> 上記は動作確認用の合成テスト画像（`tools/make_sample_photos.py` 生成、実写ではない）による表示例です。
 
 ## コンセプト
 
