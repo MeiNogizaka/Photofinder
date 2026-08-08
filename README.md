@@ -3,9 +3,8 @@
 PC ローカル / NAS 上の写真を **日本語の自然言語** と **画像例** で高速検索できる個人用アプリ。
 外部サービス不要・完全ローカル動作がデフォルト。軽量・軽快を最優先した設計。
 
-[app2/photofinder](../app2/photofinder) からのフォーク。配布形態をWindows exeから**Docker専用
-(CPU/CUDA)** に変更し、**RAW対応**・**FAISS/RRF検索チューニング**・**人手タグのデータセット
-書き出し機能**を追加した。app2/photofinder自体はフォーク元として変更せず残している。
+配布形態は**Docker専用(CPU/CUDA)**。**RAW対応**・**FAISS/RRF検索チューニング**・**人手タグの
+データセット書き出し機能**を備える。
 
 ライセンス: **AGPL-3.0**（[LICENSE](LICENSE) / 詳細は末尾「ライセンス」節参照）
 
@@ -107,7 +106,7 @@ photofinder/
 │                                 結果を解析し、AI自動タグの確定/否認率・YOLO信頼度
 │                                 しきい値の感度分析・種名マージン分析を表示する
 ├── docs/
-│   ├── design.md             ← 詳細設計書（app2/photofinder当初案からの差分表 + photofinderでの追加変更）
+│   ├── design.md             ← 詳細設計書（当初案からの差分表 + その後の追加変更）
 │   ├── api-spec.md           ← REST API エンドポイント仕様
 │   ├── data-schema.md        ← ER 図 + SQLite DDL + FAISS/POI DB 構成
 │   ├── docker.md              ← Docker配布の詳細（ビルド・ボリューム・公開範囲・トラブルシュート）
@@ -174,8 +173,8 @@ WSL環境での運用のコツやホストフォルダを複数登録する方�
 Dockerのbind mount（`PHOTO_LIBRARY_PATH:/photos:ro`）はDockerホストの**ローカルディレクトリ**を
 そのままコンテナに渡すだけで、SMBを直接しゃべるわけではない。そのためNAS上の写真を使うには、
 先にDockerホスト（Linux）側でSMB共有をOS標準の方法でマウントし、そのマウント先を
-`PHOTO_LIBRARY_PATH` に指定する（旧app2/photofinderのWindows exeはUNCパス`\\NAS\photo`を
-ルートとして直接登録できたが、Docker/Linux専用になったphotofinderではこの一段が必要になる）。
+`PHOTO_LIBRARY_PATH` に指定する必要がある（WindowsのようにUNCパス`\\NAS\photo`を直接
+指定することはできない）。
 
 ```bash
 # cifs-utils (Ubuntu/Debian系)
@@ -241,27 +240,24 @@ python3 -m venv .venv
 
 ## 実装状況
 
-**app2/photofinder時点でM1〜M5完了**（走査・EXIF・埋め込み検索・物体検出/OCR・野鳥/場所名/
-バックアップ、詳細はdocs/design.mdの差分表参照）。
+**M1〜M5完了**（走査・EXIF・埋め込み検索・物体検出/OCR・野鳥/場所名/バックアップ、詳細は
+docs/design.mdの差分表参照）。
 
-**photofinderでのフォーク後の変更**:
-- **配布をDocker専用に変更** — Windows exe (PyInstaller) 配布・DirectML対応コードを廃止。
-  `Dockerfile`をビルド引数`VARIANT=cpu|cuda`でCPU/CUDA 2バリアントに作り分け。モデル取得は
-  アプリイメージのビルド/起動ライフサイクルから独立した`model-fetch`サービスに分離
+**主な実装内容**:
+- **配布はDocker専用** — `Dockerfile`をビルド引数`VARIANT=cpu|cuda`でCPU/CUDA 2バリアントに
+  作り分け。モデル取得はアプリイメージのビルド/起動ライフサイクルから独立した
+  `model-fetch`サービスに分離
 - **RAW対応** — `rawpy`の埋め込みプレビュー抽出（フル現像はしない）で実装。CR2/CR3/NEF/ARW/
   ORF/RAF/RW2/DNG/PEF等が対象。EXIFは`piexif`→（RAWで空なら）`exifread`の順にフォールバック
-- **FAISS/RRFチューニング** — HNSWの`efConstruction=200`設定（旧: FAISS既定値40のまま未調整）、
-  `efSearch`のクエリ`k`に応じた動的設定、フィルタ絞り込み強度に応じたtop-k動的拡張
-  （200〜2000。design.mdが当初から意図していたが未実装だった箇所を解消）
+- **FAISS/RRFチューニング** — HNSWの`efConstruction=200`設定、`efSearch`のクエリ`k`に応じた
+  動的設定、フィルタ絞り込み強度に応じたtop-k動的拡張（200〜2000）
 - **データセット書き出し** — 既存の確定/否認タグ機構（`photo_tags.verified`）を人手の正解
   データとして扱い、`POST /api/export/dataset`で教師/評価データセット用のJSONL+画像zipを
-  書き出す新機能
-- **その他の修正** — 透かし書き出しのフォントをWindows専用パスからLinux/Noto Sans・Serif JP
-  へ変更（Docker上で日本語が文字化けしていた既存バグの修正）、コンテナ実行時は
+  書き出す機能
+- **その他** — 透かし書き出しのフォントをLinux/Noto Sans・Serif JPに対応、コンテナ実行時は
   「エクスプローラで開く」系UIを自動的に非表示化。写真書き出し・データセット書き出しは
-  コンテナ内の`data/exports/`に保存する方式（旧: エクスプローラで開くボタン付き）から
-  ブラウザへ直接ダウンロードさせる方式に変更し、コンテナ内にダウンロード後のデータを
-  残さないようにした
+  コンテナ内に保存せずブラウザへ直接ダウンロードさせる方式で、コンテナ内にダウンロード後の
+  データを残さないようにしている
 
 ## 運用方針（要約 — 詳細は docs/design.md §8）
 

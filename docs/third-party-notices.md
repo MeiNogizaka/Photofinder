@@ -6,9 +6,8 @@
 各ライセンスの条件（表示義務・ソース開示義務等）が発生しうる。
 
 ライセンス表記は `pip` パッケージのインストール済みメタデータ（`importlib.metadata`）と
-各モデル配布元の記載を実際に確認した上で記録している（app2/photofinder時点2026-07-10、
-photofinderでのDocker/RAW関連追加分は2026-07-24に確認）。パッケージのバージョンアップや
-モデル差し替え時は再確認すること。
+各モデル配布元の記載を実際に確認した上で記録している（2026-07-10時点、Docker/RAW関連追加分は
+2026-07-24に確認）。パッケージのバージョンアップやモデル差し替え時は再確認すること。
 
 ---
 
@@ -57,7 +56,7 @@ Dockerの`docker-compose.yml`で既定`127.0.0.1`バインドのみに制限し�
 | xxhash | BSD-2-Clause | |
 | faiss-cpu | MIT | |
 | onnxruntime | MIT | CPUイメージで使用。CUDAイメージでは `onnxruntime-gpu`（requirements-gpu.txt、同じくMIT）に差し替わる（Dockerfileのビルド引数`VARIANT`参照）。無印onnxruntimeと同居できないため両方を同時インストールすることはない |
-| nvidia-cudnn-cu13（requirements-gpu.txt、CUDAイメージのみ） | NVIDIA Proprietary Software License Agreement | cuDNN本体はNVIDIA独自ライセンス（OSSではない）。再配布はpipホイール経由でNVIDIA自身が行っている。**`photofinder:cuda`イメージを第三者に配布/公開する場合、この依存も配布物に含まれる**点に注意（app2/photofinder時点では開発機限定の追加インストールで配布物には含まれなかったが、photofinderではCUDAイメージ自体が配布対象になったため状況が変わった） |
+| nvidia-cudnn-cu13（requirements-gpu.txt、CUDAイメージのみ） | NVIDIA Proprietary Software License Agreement | cuDNN本体はNVIDIA独自ライセンス（OSSではない）。再配布はpipホイール経由でNVIDIA自身が行っている。**`photofinder:cuda`イメージを第三者に配布/公開する場合、この依存も配布物に含まれる**点に注意 |
 | numpy | BSD-3-Clause / 0BSD / MIT / Zlib / CC0-1.0（バンドル部品込み、いずれも許諾的） | |
 | tokenizers | Apache-2.0 | |
 | huggingface_hub | Apache-2.0 | |
@@ -78,8 +77,8 @@ Dockerの`docker-compose.yml`で既定`127.0.0.1`バインドのみに制限し�
 
 **実機確認済み（Docker Linuxイメージで確認、2026-07-24）**:
 manylinuxホイールにも `libheif-*.so`・`libde265-*.so` に加えて
-**`libx265-*.so` が実際に同梱されている**ことを確認した（`pillow_heif.libs/`配下。
-旧app2/photofinderのWindows exeビルドで確認された状況と同じ）。PhotoFinder は HEIC の
+**`libx265-*.so` が実際に同梱されている**ことを確認した（`pillow_heif.libs/`配下）。
+PhotoFinder は HEIC の
 **デコード（読み込み）のみ**を行い、エンコード（書き出し）は一切しないため、実行時に
 x265 のコード（HEVCエンコーダ）が実際に呼び出されることは無いはずだが、
 **バイナリとしてはDockerイメージに含まれている**という事実は変わらない。
