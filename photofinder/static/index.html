@@ -26,13 +26,28 @@
   header {
     display:flex; gap:10px; align-items:center; padding:12px 16px;
     border-bottom:1px solid var(--line); flex:none;
+    position:relative; z-index:5;
   }
   header h1 { font-size:15px; margin:0 12px 0 0; color:var(--accent); }
+  #qDrop { flex:1; max-width:560px; position:relative; }
   #q {
-    flex:1; max-width:560px; background:var(--card); border:1px solid var(--line);
+    width:100%; background:var(--card); border:1px solid var(--line);
     border-radius:6px; padding:7px 12px; color:var(--ink); font:inherit;
   }
   #q:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  /* ファイルドラッグ中は検索窓だけをドロップ先として強調（全画面オーバーレイは使わない） */
+  body.dragging #qDrop::after {
+    content:"画像をドロップして原本検索";
+    position:absolute; inset:-6px; display:grid; place-items:center;
+    font-size:12.5px; font-weight:700; color:var(--accent);
+    background:color-mix(in srgb, var(--accent-soft) 92%, var(--card));
+    border:2px dashed var(--accent); border-radius:8px;
+    pointer-events:none; z-index:2;
+  }
+  body.dragging #qDrop.hot::after {
+    background:var(--accent-soft);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
   input[type=date] {
     background:var(--card); border:1px solid var(--line); border-radius:6px;
     padding:5px 8px; color:var(--ink); font:inherit; font-size:12.5px;
@@ -255,19 +270,15 @@
   }
   .thumb .badge.status.exported { background:var(--accent); }
   .thumb .badge.status.posted { background:var(--ok); top:28px; }
-  body.dragging::after {
-    content:"画像をドロップして原本を検索"; position:fixed; inset:0; z-index:99;
-    display:grid; place-items:center; font-size:20px; font-weight:700; color:var(--accent);
-    background:color-mix(in srgb, var(--paper) 82%, transparent);
-    border:3px dashed var(--accent); pointer-events:none;
-  }
 </style>
 </head>
 <body>
 
 <header>
   <h1>PhotoFinder</h1>
-  <input id="q" type="search" placeholder="自然言語で検索（例: 青い鳥 / 紅葉の寺）— 画像をドロップ/貼り付けで原本検索" autocomplete="off">
+  <div id="qDrop">
+    <input id="q" type="search" placeholder="自然言語で検索（例: 青い鳥 / 紅葉の寺）— 画像をドロップ/貼り付けで原本検索" autocomplete="off">
+  </div>
   <input id="dateFrom" type="date" title="この日以降">
   <input id="dateTo" type="date" title="この日以前">
   <button id="searchBtn">検索</button>
@@ -1125,26 +1136,80 @@ $("q").addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) runSearch();
 });
 
-// 画像ドロップ / 貼り付け → 逆検索
+// 画像ドロップ / 貼り付け → 逆検索。ドロップ発火は検索窓 (#qDrop) に限定する。
+// ページ他箇所への drop は preventDefault のみ（ブラウザが画像を開いて SPA が消えるのを防ぐ）。
+function isFileDrag(e) {
+  const dt = e.dataTransfer;
+  if (!dt) return false;
+  const types = dt.types ? [...dt.types] : [];
+  if (types.includes("Files")) return true;
+  try { return [...(dt.items || [])].some(i => i.kind === "file"); }
+  catch { return false; }
+}
+function anyModalOpen() {
+  return [...document.querySelectorAll("dialog")].some(d => d.open);
+}
+function overSearchDrop(e) {
+  return !!e.target.closest?.("#qDrop");
+}
+function imageFileFromList(list) {
+  return [...(list ?? [])].find(f => f.type.startsWith("image/"));
+}
+function onNativeFileInput(e) {
+  return !!e.target.closest?.("input[type=file]");
+}
+function inEditableField(el) {
+  if (!el || el.id === "q") return false;
+  const tag = el.tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag === "INPUT") {
+    const type = (el.type || "text").toLowerCase();
+    return !["button", "submit", "reset", "checkbox", "radio", "file", "hidden", "range", "image"].includes(type);
+  }
+  return !!el.isContentEditable;
+}
+function clearFileDrag() {
+  dragDepth = 0;
+  document.body.classList.remove("dragging");
+  $("qDrop").classList.remove("hot");
+}
+
 let dragDepth = 0;
 document.addEventListener("dragenter", e => {
-  if ([...e.dataTransfer.items].some(i => i.kind === "file")) {
-    dragDepth++; document.body.classList.add("dragging");
-  }
+  if (!isFileDrag(e)) return;
+  dragDepth++;
+  if (!anyModalOpen()) document.body.classList.add("dragging");
 });
 document.addEventListener("dragleave", () => {
-  if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dragging"); }
+  if (--dragDepth <= 0) clearFileDrag();
 });
-document.addEventListener("dragover", e => e.preventDefault());
-document.addEventListener("drop", e => {
+document.addEventListener("dragover", e => {
+  if (!isFileDrag(e)) return;
+  if (onNativeFileInput(e)) return;  // 設定/書き出しの <input type=file> はブラウザ既定に任せる
   e.preventDefault();
-  dragDepth = 0; document.body.classList.remove("dragging");
-  const file = [...e.dataTransfer.files].find(f => f.type.startsWith("image/"));
+  const allow = !anyModalOpen() && overSearchDrop(e);
+  e.dataTransfer.dropEffect = allow ? "copy" : "none";
+});
+document.addEventListener("drop", e => {
+  if (onNativeFileInput(e)) { clearFileDrag(); return; }
+  e.preventDefault();
+  const accept = !anyModalOpen() && overSearchDrop(e);
+  clearFileDrag();
+  if (!accept) return;
+  const file = imageFileFromList(e.dataTransfer.files);
   if (file) reverseSearch(file);
+});
+$("qDrop").addEventListener("dragenter", e => {
+  if (isFileDrag(e) && !anyModalOpen()) $("qDrop").classList.add("hot");
+});
+$("qDrop").addEventListener("dragleave", e => {
+  if (!$("qDrop").contains(e.relatedTarget)) $("qDrop").classList.remove("hot");
 });
 document.addEventListener("paste", e => {
-  const file = [...(e.clipboardData?.files ?? [])].find(f => f.type.startsWith("image/"));
-  if (file) reverseSearch(file);
+  const file = imageFileFromList(e.clipboardData?.files);
+  if (!file || anyModalOpen() || inEditableField(document.activeElement)) return;
+  e.preventDefault();
+  reverseSearch(file);
 });
 document.addEventListener("keydown", e => {
   // "/" ショートカットは他の入力欄への通常入力 (日付 2025/08 等) を奪わないようにする
