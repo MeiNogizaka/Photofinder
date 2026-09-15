@@ -608,6 +608,7 @@
         <span style="display:flex; gap:4px; align-items:center">
           <select id="expEdge" style="flex:1; min-width:0; background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:4px">
             <option value="" selected>原寸</option>
+            <option value="4096">4096px</option>
             <option value="2048">2048px</option><option value="1600">1600px</option>
             <option value="1024">1024px</option>
             <option value="custom">指定</option>
@@ -1444,7 +1445,7 @@ async function openExport(photo) {
   $("expGps").checked = prefs.gps;
   $("expFormat").value = prefs.format;
   $("expEdgePx").value = prefs.edgePx;
-  const knownEdge = ["", "2048", "1600", "1024", "custom"];
+  const knownEdge = ["", "4096", "2048", "1600", "1024", "custom"];
   if (prefs.edge && !knownEdge.includes(prefs.edge)) {
     // 旧バージョンで数値だけ記憶していた場合は「指定」へ
     $("expEdge").value = "custom";
