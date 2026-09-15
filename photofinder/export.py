@@ -64,6 +64,58 @@ def _load_font(size: int, font_key: str | None = None) -> ImageFont.FreeTypeFont
     return ImageFont.load_default()
 
 
+# 長辺指定の上限。拡大を許可するため、誤って巨大な値を渡すとメモリを食う。
+# 原寸 (max_edge=None) はこの制限の対象外
+MAX_EDGE_LIMIT = 16384
+
+
+def _resize_long_edge(img: Image.Image, max_edge: int) -> Image.Image:
+    """長辺を max_edge px に合わせる (不足なら拡大、超過なら縮小)。LANCZOS。"""
+    w, h = img.size
+    long = max(w, h)
+    if long <= 0 or long == max_edge:
+        return img
+    scale = max_edge / long
+    nw, nh = max(1, round(w * scale)), max(1, round(h * scale))
+    if (nw, nh) == (w, h):
+        return img
+    return img.resize((nw, nh), Image.LANCZOS)
+
+
+def _encode_image(img: Image.Image, fmt: str, quality: int, save_exif) -> bytes:
+    kwargs: dict = {}
+    if fmt in ("jpeg", "webp"):
+        kwargs["quality"] = int(quality)
+    if save_exif:
+        kwargs["exif"] = save_exif
+    buf = io.BytesIO()
+    img.save(buf, fmt.upper(), **kwargs)
+    return buf.getvalue()
+
+
+def _encode_to_target_bytes(
+    img: Image.Image, fmt: str, target_bytes: int, save_exif,
+) -> bytes:
+    """JPEG/WebP の quality を二分探索し、target_bytes 以下で最も高画質な結果を返す。
+
+    最低 quality=1 でも超える場合はその結果を返す (これ以上小さくできない)。
+    """
+    smallest = _encode_image(img, fmt, 1, save_exif)
+    if len(smallest) > target_bytes:
+        return smallest
+    lo, hi = 1, 100
+    best = smallest
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        data = _encode_image(img, fmt, mid, save_exif)
+        if len(data) <= target_bytes:
+            best = data
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return best
+
+
 def export_photo(
     src: Path,
     crop: dict | None = None,          # {x, y, w, h} 0-1 正規化
@@ -72,6 +124,7 @@ def export_photo(
     fmt: str = "jpeg",
     quality: int = 92,
     max_edge: int | None = 2048,
+    target_bytes: int | None = None,   # JPEG/WebP のみ。このバイト数以下になるよう quality を調整
 ) -> tuple[bytes, str]:
     # with で開き、画素データを読み切ってから閉じる (開いたままだと大量書き出し時に
     # FD を消費し続ける。scanner.py の extract_one と同じ理由)。RAWはscanner.pyと
@@ -97,8 +150,8 @@ def export_photo(
         if box[2] - box[0] >= 16 and box[3] - box[1] >= 16:
             img = img.crop(box)
 
-    if max_edge and max(img.size) > max_edge:
-        img.thumbnail((max_edge, max_edge), Image.LANCZOS)
+    if max_edge:
+        img = _resize_long_edge(img, max_edge)
 
     if watermark and (watermark.get("text") or watermark.get("image_data_url")):
         img = _draw_watermark(img, watermark)
@@ -113,14 +166,11 @@ def export_photo(
     ext = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}[fmt]
     filename = f"{stem}_edit{ext}"
 
-    kwargs: dict = {}
-    if fmt in ("jpeg", "webp"):
-        kwargs["quality"] = quality
-    if save_exif:
-        kwargs["exif"] = save_exif
-    buf = io.BytesIO()
-    img.save(buf, fmt.upper(), **kwargs)
-    return buf.getvalue(), filename
+    if target_bytes and fmt in ("jpeg", "webp"):
+        data = _encode_to_target_bytes(img, fmt, target_bytes, save_exif)
+    else:
+        data = _encode_image(img, fmt, quality, save_exif)
+    return data, filename
 
 
 def _load_watermark_image(data_url: str) -> Image.Image:

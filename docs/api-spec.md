@@ -227,7 +227,8 @@
   "watermark": { "text": "© mikan", "position": "bottom-right",
                  "font": "gothic", "opacity": 0.6, "size_pct": 2.5 },   // 省略可（テキスト透かし）
   "strip_metadata": true,   // true = EXIF 全除去 (GPS・機材シリアル含む)。旧名 strip_gps も受理
-  "format": "png", "quality": 95, "max_edge": null          // 既定: PNG・原寸。JPEG時のみ quality 使用
+  "format": "png", "quality": 95, "max_edge": null,         // 既定: PNG・原寸
+  "target_mib": null                                        // 任意。JPEG/WebP のみ
 }
 ```
 
@@ -246,6 +247,16 @@
 対する透かし画像の幅の割合（アスペクト比は保持）。`image_data_url`はアルファチャンネル付き
 PNG/WebP等を`FileReader`でdata URL化したもの（デコード後8MB・4000万px超は500エラーで拒否）。
 画像自体のアルファに`opacity`をさらに掛け合わせて合成する。
+
+`format` は `jpeg`|`png`|`webp`（既定は実装上 `jpeg`、UI の既定は PNG）。
+`quality` は JPEG/WebP の画質（1–100）。PNG では無視する。
+`max_edge` は書き出し画像の長辺ピクセル。省略または `null` で原寸。指定時は LANCZOS で
+長辺がちょうどその値になるよう拡大または縮小する（従来は縮小のみだった）。
+許容範囲は 1–16384（`export.MAX_EDGE_LIMIT`）。原寸出力にはこの上限は適用しない。
+`target_mib` は出力ファイルをそのサイズ**以下**に収めるための目安（1 MiB = 1048576 バイト、
+0 より大きく 100 以下）。JPEG/WebP のみ。quality を二分探索して、指定バイト数以下で
+最も高画質な結果を返す。quality=1 でも超える場合はその結果を返す。PNG では 422。
+`target_mib` 指定時は `quality` は使わない。
 
 → 画像バイナリを `Content-Disposition: attachment` 付きで直接返す（`image/jpeg`|`image/png`|`image/webp`）。
 コンテナ内には保存せず、ブラウザへそのままダウンロードさせる。**原本は変更しない。**

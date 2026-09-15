@@ -486,7 +486,7 @@ def export(photo_id: int, body: dict = Body(default={})):
     その場で返すのみ (以前は data/exports/ 配下に永続化していたが、Docker配布
     ではダウンロード後にコンテナ内へファイルを残しておく理由が無いため撤廃)。
     """
-    from .export import export_photo
+    from .export import MAX_EDGE_LIMIT, export_photo
     p = _photo_or_404(photo_id)
     src = Path(p["root_path"]) / p["path"]
     if not src.exists():
@@ -495,6 +495,32 @@ def export(photo_id: int, body: dict = Body(default={})):
     if fmt not in ("jpeg", "png", "webp"):
         raise HTTPException(422, "format must be jpeg|png|webp")
     try:
+        quality = int(body.get("quality", 92))
+    except (TypeError, ValueError):
+        raise HTTPException(422, "quality must be an integer")
+    if not (1 <= quality <= 100):
+        raise HTTPException(422, "quality must be 1..100")
+    max_edge = None
+    if body.get("max_edge"):
+        try:
+            max_edge = int(body["max_edge"])
+        except (TypeError, ValueError):
+            raise HTTPException(422, "max_edge must be an integer")
+        if not (1 <= max_edge <= MAX_EDGE_LIMIT):
+            raise HTTPException(422, f"max_edge must be 1..{MAX_EDGE_LIMIT}")
+    target_bytes = None
+    raw_mib = body.get("target_mib")
+    if raw_mib not in (None, "", 0, 0.0):
+        if fmt == "png":
+            raise HTTPException(422, "target_mib is only valid for jpeg|webp")
+        try:
+            target_mib = float(raw_mib)
+        except (TypeError, ValueError):
+            raise HTTPException(422, "target_mib must be a number")
+        if not (0 < target_mib <= 100):
+            raise HTTPException(422, "target_mib must be in (0, 100]")
+        target_bytes = int(target_mib * 1024 * 1024)  # 1 MiB = 1048576 バイト
+    try:
         data, filename = export_photo(
             src,
             crop=body.get("crop"),
@@ -502,8 +528,9 @@ def export(photo_id: int, body: dict = Body(default={})):
             strip_metadata=body.get(
                 "strip_metadata", body.get("strip_gps", True)),  # 旧名も受理
             fmt=fmt,
-            quality=int(body.get("quality", 92)),
-            max_edge=int(body["max_edge"]) if body.get("max_edge") else None,
+            quality=quality,
+            max_edge=max_edge,
+            target_bytes=target_bytes,
         )
     except Exception as ex:
         raise HTTPException(500, f"export failed: {ex}")

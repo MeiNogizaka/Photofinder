@@ -540,10 +540,12 @@
       </p>
       <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center" id="expAspects">
         <button class="ghost" data-a="" style="font-size:11px;padding:3px 10px">自由</button>
-        <button class="ghost" data-a="1" style="font-size:11px;padding:3px 10px">1:1</button>
-        <button class="ghost" data-a="0.8" style="font-size:11px;padding:3px 10px">4:5</button>
-        <button class="ghost" data-a="1.7778" style="font-size:11px;padding:3px 10px">16:9</button>
-        <button class="ghost" data-a="1.5" style="font-size:11px;padding:3px 10px">3:2</button>
+        <button class="ghost" data-aw="1" data-ah="1" style="font-size:11px;padding:3px 10px">1:1</button>
+        <button class="ghost" data-aw="5" data-ah="4" style="font-size:11px;padding:3px 10px">5:4</button>
+        <button class="ghost" data-aw="4" data-ah="3" style="font-size:11px;padding:3px 10px">4:3</button>
+        <button class="ghost" data-aw="16" data-ah="9" style="font-size:11px;padding:3px 10px">16:9</button>
+        <button class="ghost" data-aw="3" data-ah="2" style="font-size:11px;padding:3px 10px">3:2</button>
+        <button id="expAspFlip" class="ghost" type="button" title="比率の縦横を入れ替える" style="font-size:11px;padding:3px 10px">縦横入替</button>
         <span style="display:flex; align-items:center; gap:3px; font-size:11px; color:var(--ink2)">
           <input id="expAspW" type="number" min="1" placeholder="幅" style="width:40px; margin:0; padding:3px 4px; font-size:11px">:<input id="expAspH" type="number" min="1" placeholder="高さ" style="width:40px; margin:0; padding:3px 4px; font-size:11px">
           <button id="expAspCustomBtn" class="ghost" style="font-size:11px;padding:3px 8px">適用</button>
@@ -558,7 +560,7 @@
         <button id="expBoxResetBtn" class="ghost" style="font-size:11px;padding:3px 8px;margin-left:auto">範囲をリセット</button>
       </div>
     </div>
-    <div style="width:220px; font-size:12px">
+    <div style="width:248px; font-size:12px">
       <p class="lbl" style="margin-top:0">透かし</p>
       <div style="display:flex; gap:6px; margin-bottom:6px" id="expWmMode">
         <button class="ghost" data-m="text" style="font-size:11px;padding:3px 10px;flex:1">テキスト</button>
@@ -600,14 +602,24 @@
         <select id="expFormat" style="background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:4px">
           <option value="png" selected>PNG</option>
           <option value="jpeg">JPEG</option>
+          <option value="webp">WebP</option>
         </select>
         <span>長辺</span>
-        <select id="expEdge" style="background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:4px">
-          <option value="" selected>原寸</option>
-          <option value="2048">2048px</option><option value="1600">1600px</option>
-          <option value="1024">1024px</option>
-        </select>
-        <span id="expQLabel">品質</span><input id="expQ" type="number" min="50" max="100" value="95" style="width:64px; margin:0">
+        <span style="display:flex; gap:4px; align-items:center">
+          <select id="expEdge" style="flex:1; min-width:0; background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:4px">
+            <option value="" selected>原寸</option>
+            <option value="2048">2048px</option><option value="1600">1600px</option>
+            <option value="1024">1024px</option>
+            <option value="custom">指定</option>
+          </select>
+          <input id="expEdgePx" type="number" min="1" max="16384" placeholder="px" title="長辺のピクセル数（拡大・縮小）" style="display:none; width:72px; margin:0">
+        </span>
+        <span id="expQLabel">品質</span><input id="expQ" type="number" min="1" max="100" value="95" style="width:64px; margin:0">
+        <span id="expMibLabel">容量</span>
+        <span id="expMibCell" style="display:flex; gap:4px; align-items:center">
+          <input id="expTargetMib" type="number" min="0.01" max="100" step="0.1" placeholder="任意" title="このサイズ以下になるよう画質を自動調整（1 MiB = 1048576 バイト）" style="width:64px; margin:0">
+          <span style="color:var(--ink2); font-size:11px">MiB</span>
+        </span>
       </div>
       <div class="btns" style="margin-top:14px">
         <button id="expGo" style="flex:1">書き出す</button>
@@ -1244,7 +1256,7 @@ $("tagInput").addEventListener("input", async e => {
 // --- 書き出しダイアログ ---
 // 切り出しは画像全体を表示したキャンバス上に枠を描画し、ドラッグで移動/拡縮するGUI操作。
 // exp.box は画像に対する正規化座標 (0-1) の {x, y, w, h}。
-const exp = { photo: null, img: null, aspect: null, box: null, drag: null };
+const exp = { photo: null, img: null, aspect: null, box: null, drag: null, aspectFlip: false };
 const CROP_MIN = 0.03;  // 枠の最小サイズ（正規化）
 const CROP_HANDLES = [
   {id:"nw", fx:0,   fy:0,   cursor:"nwse-resize"},
@@ -1269,7 +1281,7 @@ const EXPORT_PREFS_KEY = "pf_export_prefs_v1";
 const EXPORT_DEFAULTS = {
   wm: "", wmPos: "bottom-right", wmFont: "gothic", wmOp: 0.6, wmSize: 2.5,
   wmMode: "text", wmImgSize: 20,
-  gps: true, format: "png", edge: "", quality: 95,
+  gps: true, format: "png", edge: "", edgePx: "", quality: 95, targetMib: "",
   boxPx: null,  // {x, y, w, h, origW, origH} 原寸px。nullなら全体 (未指定/前回リセット済み)
 };
 function loadExportPrefs() {
@@ -1287,7 +1299,8 @@ function saveExportPrefs() {
     // 容量を圧迫しうるため対象外 — 再度開いたときはファイルを選び直してもらう
     wmMode: exp.wmMode, wmImgSize: +$("expWmImgSize").value,
     gps: $("expGps").checked,
-    format: $("expFormat").value, edge: $("expEdge").value, quality: +$("expQ").value,
+    format: $("expFormat").value, edge: $("expEdge").value, edgePx: $("expEdgePx").value,
+    quality: +$("expQ").value, targetMib: $("expTargetMib").value,
     boxPx: (exp.box && origW && origH && !isFull)
       ? { x: Math.round(exp.box.x * origW), y: Math.round(exp.box.y * origH),
           w: Math.round(exp.box.w * origW), h: Math.round(exp.box.h * origH),
@@ -1347,9 +1360,45 @@ const WM_FONT_CSS = {
   "mplus-bold":  { family: '"M PLUS 1", sans-serif', weight: "bold" },
 };
 
+function aspectPresetButtons() {
+  return [...$("expAspects").querySelectorAll("button[data-a], button[data-aw]")];
+}
+function aspectFromButton(b) {
+  if (b.dataset.a === "") return null;
+  const aw = +b.dataset.aw, ah = +b.dataset.ah;
+  if (aw > 0 && ah > 0) return exp.aspectFlip ? ah / aw : aw / ah;
+  return b.dataset.a ? +b.dataset.a : null;
+}
+function updateAspectPresetLabels() {
+  for (const b of $("expAspects").querySelectorAll("button[data-aw]")) {
+    const aw = b.dataset.aw, ah = b.dataset.ah;
+    b.textContent = exp.aspectFlip ? `${ah}:${aw}` : `${aw}:${ah}`;
+  }
+}
+function markAspectButton(b) {
+  aspectPresetButtons().forEach(x => x.classList.toggle("ghost", x !== b));
+}
+function resetAspectPresets() {
+  exp.aspectFlip = false;
+  updateAspectPresetLabels();
+  aspectPresetButtons().forEach(x => x.classList.toggle("ghost", x.dataset.a !== ""));
+}
+function getExpMaxEdge() {
+  const v = $("expEdge").value;
+  if (v === "custom") {
+    const n = +$("expEdgePx").value;
+    return (n >= 1 && n <= 16384) ? n : null;
+  }
+  return v ? +v : null;
+}
+function syncExpEdgePxVisibility() {
+  $("expEdgePx").style.display = $("expEdge").value === "custom" ? "" : "none";
+}
+
 async function openExport(photo) {
   exp.photo = photo;
   exp.aspect = null;
+  exp.aspectFlip = false;
   exp.box = { x: 0, y: 0, w: 1, h: 1 };
   exp.drag = null;
   // 透かし画像はダイアログを開くたびに選び直す (localStorageに永続化しない、
@@ -1358,7 +1407,7 @@ async function openExport(photo) {
   exp.wmImageEl = null;
   $("expWmImgFile").value = "";
   $("expWmImgName").textContent = "";
-  [...$("expAspects").children].forEach(b => b.classList.toggle("ghost", b.dataset.a !== ""));
+  resetAspectPresets();
   $("expAspW").value = ""; $("expAspH").value = "";
   $("expPxW").value = ""; $("expPxH").value = "";
   $("expName").textContent = basename(photo.path);
@@ -1394,8 +1443,18 @@ async function openExport(photo) {
   setWmMode(prefs.wmMode);
   $("expGps").checked = prefs.gps;
   $("expFormat").value = prefs.format;
-  $("expEdge").value = prefs.edge;
+  $("expEdgePx").value = prefs.edgePx;
+  const knownEdge = ["", "2048", "1600", "1024", "custom"];
+  if (prefs.edge && !knownEdge.includes(prefs.edge)) {
+    // 旧バージョンで数値だけ記憶していた場合は「指定」へ
+    $("expEdge").value = "custom";
+    $("expEdgePx").value = prefs.edge;
+  } else {
+    $("expEdge").value = prefs.edge;
+  }
   $("expQ").value = prefs.quality;
+  $("expTargetMib").value = prefs.targetMib;
+  syncExpEdgePxVisibility();
   updateExpFormatUI();
   exp.img = new Image();
   exp.img.onload = drawExport;
@@ -1487,15 +1546,15 @@ function drawExport() {
   // プレビュー画像 (exp.img、preview APIで1600px上限) ではなく実際の原本解像度
   // (exp.photo.width/height) を基準にする — でないと表示px数がプレビューの上限で
   // 頭打ちになり、実際の書き出し結果 (原本を直接処理、原寸なら無制限) と食い違う。
-  // 「長辺」設定 (expEdge) によるリサイズも export.py の thumbnail() と同じ計算で
-  // 反映し、実際に書き出される最終pxを表示する
+  // 「長辺」設定 (expEdge) によるリサイズも export.py の _resize_long_edge() と同じ
+  // 計算で反映し、実際に書き出される最終pxを表示する（拡大・縮小の両方）
   const origW = exp.photo.width || exp.img.naturalWidth;
   const origH = exp.photo.height || exp.img.naturalHeight;
   let pxW = Math.round(exp.box.w * origW), pxH = Math.round(exp.box.h * origH);
-  const maxEdge = $("expEdge").value ? +$("expEdge").value : null;
-  if (maxEdge && Math.max(pxW, pxH) > maxEdge) {
+  const maxEdge = getExpMaxEdge();
+  if (maxEdge && Math.max(pxW, pxH) > 0 && Math.max(pxW, pxH) !== maxEdge) {
     const s = maxEdge / Math.max(pxW, pxH);
-    pxW = Math.round(pxW * s); pxH = Math.round(pxH * s);
+    pxW = Math.max(1, Math.round(pxW * s)); pxH = Math.max(1, Math.round(pxH * s));
   }
   const dimLabel = `${pxW} × ${pxH}px`;
   ctx.font = "11px ui-monospace, Consolas, monospace";
@@ -1592,7 +1651,7 @@ function expApplyPixelSize(pxW, pxH) {
   const cx = exp.box.x + exp.box.w / 2, cy = exp.box.y + exp.box.h / 2;
   exp.box = { x: clamp(cx - w/2, 0, 1-w), y: clamp(cy - h/2, 0, 1-h), w, h };
   exp.aspect = pxW / pxH;
-  [...$("expAspects").querySelectorAll("button[data-a]")].forEach(x => x.classList.add("ghost"));
+  aspectPresetButtons().forEach(x => x.classList.add("ghost"));
   drawExport();
   saveExportPrefs();
 }
@@ -1677,11 +1736,24 @@ $("expCanvas").addEventListener("pointerup", () => {
 });
 
 $("expAspects").addEventListener("click", e => {
-  const b = e.target.closest("[data-a]");
+  if (e.target.closest("#expAspFlip")) return;
+  const b = e.target.closest("button[data-a], button[data-aw]");
   if (!b) return;
-  exp.aspect = b.dataset.a ? +b.dataset.a : null;
-  [...$("expAspects").children].forEach(x => x.classList.toggle("ghost", x !== b));
+  exp.aspect = aspectFromButton(b);
+  markAspectButton(b);
   expApplyAspect();
+  saveExportPrefs();
+});
+
+$("expAspFlip").addEventListener("click", () => {
+  exp.aspectFlip = !exp.aspectFlip;
+  updateAspectPresetLabels();
+  const cw = $("expAspW").value, ch = $("expAspH").value;
+  if (cw && ch) { $("expAspW").value = ch; $("expAspH").value = cw; }
+  if (exp.aspect) {
+    exp.aspect = 1 / exp.aspect;
+    expApplyAspect();
+  }
   saveExportPrefs();
 });
 
@@ -1690,7 +1762,7 @@ $("expAspCustomBtn").addEventListener("click", () => {
   if (!(w > 0) || !(h > 0)) return;  // 未入力・0以下は無視
   exp.aspect = w / h;
   // プリセットボタンはどれも一致しないのですべて非選択にする
-  [...$("expAspects").querySelectorAll("button[data-a]")].forEach(x => x.classList.add("ghost"));
+  aspectPresetButtons().forEach(x => x.classList.add("ghost"));
   expApplyAspect();
   saveExportPrefs();
 });
@@ -1704,22 +1776,32 @@ $("expBoxResetBtn").addEventListener("click", () => {
   exp.aspect = null;
   $("expAspW").value = ""; $("expAspH").value = "";
   $("expPxW").value = ""; $("expPxH").value = "";
-  [...$("expAspects").children].forEach(b => b.classList.toggle("ghost", b.dataset.a !== ""));
+  resetAspectPresets();
   drawExport();
   saveExportPrefs();
 });
 
 function updateExpFormatUI() {
-  const isJpeg = $("expFormat").value === "jpeg";
-  $("expQLabel").style.display = isJpeg ? "" : "none";
-  $("expQ").style.display = isJpeg ? "" : "none";
+  const lossy = $("expFormat").value !== "png";
+  $("expQLabel").style.display = lossy ? "" : "none";
+  $("expQ").style.display = lossy ? "" : "none";
+  $("expMibLabel").style.display = lossy ? "" : "none";
+  $("expMibCell").style.display = lossy ? "flex" : "none";
+  $("expQ").disabled = lossy && +$("expTargetMib").value > 0;
 }
 $("expFormat").addEventListener("change", () => { updateExpFormatUI(); saveExportPrefs(); });
+$("expTargetMib").addEventListener("change", () => { updateExpFormatUI(); saveExportPrefs(); });
+$("expTargetMib").addEventListener("input", updateExpFormatUI);
 
 $("expWm").addEventListener("input", () => { drawExport(); saveExportPrefs(); });
 $("expWmFont").addEventListener("change", () => { drawExport(); saveExportPrefs(); });
 for (const id of ["expGps", "expQ"]) $(id).addEventListener("change", saveExportPrefs);
-$("expEdge").addEventListener("change", () => { drawExport(); saveExportPrefs(); });
+$("expEdge").addEventListener("change", () => {
+  syncExpEdgePxVisibility();
+  drawExport(); saveExportPrefs();
+});
+$("expEdgePx").addEventListener("change", () => { drawExport(); saveExportPrefs(); });
+$("expEdgePx").addEventListener("input", drawExport);
 $("expWmOp").addEventListener("input", () => {
   $("expWmOpVal").textContent = Math.round(+$("expWmOp").value * 100) + "%";
   drawExport(); saveExportPrefs();
@@ -1786,8 +1868,10 @@ $("expGo").onclick = async () => {
     strip_metadata: $("expGps").checked,
     format: $("expFormat").value,
     quality: +$("expQ").value,
-    max_edge: $("expEdge").value ? +$("expEdge").value : null,
+    max_edge: getExpMaxEdge(),
   };
+  const mib = +$("expTargetMib").value;
+  if (body.format !== "png" && mib > 0) body.target_mib = mib;
   saveExportPrefs();
   $("expResult").textContent = "書き出し中…";
   try {
