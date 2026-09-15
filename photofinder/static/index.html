@@ -535,8 +535,9 @@
     <div id="expCanvasWrap" style="flex:1; min-width:0">
       <canvas id="expCanvas" width="420" height="300" style="touch-action:none; cursor:crosshair;
               background:var(--chip); border-radius:6px; display:block"></canvas>
-      <p style="font-size:10.5px; color:var(--ink2); margin:6px 0 0">
-        画像上をドラッグして切り出し範囲を指定（枠内をドラッグで移動、四隅/辺をドラッグで拡縮）
+      <p style="font-size:10.5px; color:var(--ink2); margin:6px 0 0; display:flex; justify-content:space-between; gap:10px; align-items:baseline">
+        <span>画像上をドラッグして切り出し範囲を指定（枠内をドラッグで移動、四隅/辺をドラッグで拡縮）</span>
+        <span id="expDimLabel" style="flex:none; font:11px ui-monospace,Consolas,monospace; color:var(--ink); text-align:right; white-space:pre-line"></span>
       </p>
       <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center" id="expAspects">
         <button class="ghost" data-a="" style="font-size:11px;padding:3px 10px">自由</button>
@@ -1413,6 +1414,7 @@ async function openExport(photo) {
   $("expPxW").value = ""; $("expPxH").value = "";
   $("expName").textContent = basename(photo.path);
   $("expResult").textContent = "";
+  $("expDimLabel").textContent = "";
 
   await ensureWmFontOptions();
   const prefs = loadExportPrefs();
@@ -1542,40 +1544,22 @@ function drawExport() {
     ctx.fillRect(hx - 4, hy - 4, 8, 8);
   }
 
-  // 切り出しサイズ (px) — 枠の外側 (上→ダメなら下) に表示し、写真/透かしと重ねない。
-  // 外側に置く余地が無いときだけ枠内側に回すが、その際は透かし位置と反対側の角を選ぶ。
-  // プレビュー画像 (exp.img、preview APIで1600px上限) ではなく実際の原本解像度
-  // (exp.photo.width/height) を基準にする — でないと表示px数がプレビューの上限で
-  // 頭打ちになり、実際の書き出し結果 (原本を直接処理、原寸なら無制限) と食い違う。
-  // 「長辺」設定 (expEdge) によるリサイズも export.py の _resize_long_edge() と同じ
-  // 計算で反映し、実際に書き出される最終pxを表示する（拡大・縮小の両方）
+  // 切り出しサイズ (px) はキャンバス上ではなく枠下の #expDimLabel に出す。
+  // 全画面切り出しだと枠の内側に重なり写真を隠すため。数値の意味は従来どおり:
+  // プレビュー画像 (1600px上限) ではなく原本解像度を基準にし、長辺指定の
+  // 拡大・縮小も export.py の _resize_long_edge() と同じ計算で最終pxを表示する。
   const origW = exp.photo.width || exp.img.naturalWidth;
   const origH = exp.photo.height || exp.img.naturalHeight;
-  let pxW = Math.round(exp.box.w * origW), pxH = Math.round(exp.box.h * origH);
+  const srcW = Math.round(exp.box.w * origW), srcH = Math.round(exp.box.h * origH);
+  let outW = srcW, outH = srcH;
   const maxEdge = getExpMaxEdge();
-  if (maxEdge && Math.max(pxW, pxH) > 0 && Math.max(pxW, pxH) !== maxEdge) {
-    const s = maxEdge / Math.max(pxW, pxH);
-    pxW = Math.max(1, Math.round(pxW * s)); pxH = Math.max(1, Math.round(pxH * s));
+  if (maxEdge && Math.max(srcW, srcH) > 0 && Math.max(srcW, srcH) !== maxEdge) {
+    const s = maxEdge / Math.max(srcW, srcH);
+    outW = Math.max(1, Math.round(srcW * s)); outH = Math.max(1, Math.round(srcH * s));
   }
-  const dimLabel = `${pxW} × ${pxH}px`;
-  ctx.font = "11px ui-monospace, Consolas, monospace";
-  const dtw = ctx.measureText(dimLabel).width;
-  const padX = 6, labelH = 17;
-  let lx = box.x, ly;
-  if (box.y - labelH - 4 >= 0) {
-    ly = box.y - labelH - 4;                              // 枠の外側・上
-  } else if (box.y + box.h + labelH + 4 <= c.height) {
-    ly = box.y + box.h + 4;                                // 枠の外側・下
-  } else {
-    const wmTop = (exp.wmPos || "bottom-right").includes("top");
-    ly = wmTop ? box.y + box.h - labelH - 4 : box.y + 4;   // 枠内側・透かしと反対の角
-  }
-  ctx.fillStyle = "rgba(10,16,20,.72)";
-  ctx.fillRect(lx, ly, dtw + padX * 2, labelH);
-  ctx.fillStyle = "#fff";
-  ctx.textBaseline = "middle";
-  ctx.fillText(dimLabel, lx + padX, ly + labelH / 2 + 1);
-  ctx.textBaseline = "alphabetic";
+  $("expDimLabel").textContent = (outW === srcW && outH === srcH)
+    ? `原寸 ${srcW} × ${srcH}px`
+    : `原寸 ${srcW} × ${srcH}px\n出力 ${outW} × ${outH}px`;
 
   if (box.w <= 10 || box.h <= 10) return;
   const pos = exp.wmPos || "bottom-right";
